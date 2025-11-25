@@ -1819,12 +1819,12 @@ class Sensors(GaussianPlume, BackgroundGas, SensorsSettings):
             max_distance = 700
             for degree, color in zip(degrees, colors):
                 # Calculate the end points of the lines
-                end_point1 = [float(self.gaussianplume.source_location.source_location_x/self.gaussianplume.grid.dx) + max_distance*np.cos(np.radians(degree / 2.0)), float(self.gaussianplume.source_location.source_location_y/self.gaussianplume.grid.dy) + max_distance*np.sin(np.radians(degree / 2.0))]
-                end_point2 = [float(self.gaussianplume.source_location.source_location_x/self.gaussianplume.grid.dx) + max_distance*np.cos(np.radians(-degree / 2.0)), float(self.gaussianplume.source_location.source_location_y/self.gaussianplume.grid.dy) + max_distance*np.sin(np.radians(-degree / 2.0))]
+                end_point1 = [float(self.gaussianplume.source_location.source_location_x[0]/self.gaussianplume.grid.dx) + max_distance*np.cos(np.radians(degree / 2.0)), float(self.gaussianplume.source_location.source_location_y[0]/self.gaussianplume.grid.dy) + max_distance*np.sin(np.radians(degree / 2.0))]
+                end_point2 = [float(self.gaussianplume.source_location.source_location_x[0]/self.gaussianplume.grid.dx) + max_distance*np.cos(np.radians(-degree / 2.0)), float(self.gaussianplume.source_location.source_location_y[0]/self.gaussianplume.grid.dy) + max_distance*np.sin(np.radians(-degree / 2.0))]
 
                 # Plot the lines with the same color
-                ax.plot([float(self.gaussianplume.source_location.source_location_x/self.gaussianplume.grid.dx), end_point1[0]], [float(self.gaussianplume.source_location.source_location_y/self.gaussianplume.grid.dy), end_point1[1]], color=color, label=f'{degree} degrees')
-                ax.plot([float(self.gaussianplume.source_location.source_location_x/self.gaussianplume.grid.dx), end_point2[0]], [float(self.gaussianplume.source_location.source_location_y/self.gaussianplume.grid.dy), end_point2[1]], color=color)
+                ax.plot([float(self.gaussianplume.source_location.source_location_x[0]/self.gaussianplume.grid.dx), end_point1[0]], [float(self.gaussianplume.source_location.source_location_y[0]/self.gaussianplume.grid.dy), end_point1[1]], color=color, label=f'{degree} degrees')
+                ax.plot([float(self.gaussianplume.source_location.source_location_x[0]/self.gaussianplume.grid.dx), end_point2[0]], [float(self.gaussianplume.source_location.source_location_y[0]/self.gaussianplume.grid.dy), end_point2[1]], color=color)
             # Set the aspect of the plot to equal to ensure the angles are correct
             ax.set_aspect('equal')
             ax.legend()
@@ -1920,7 +1920,7 @@ class Sensors(GaussianPlume, BackgroundGas, SensorsSettings):
         # Set the concentration plotting limits
         min_concentration = min(min(concentrations) for concentrations in concentrations_list)
         max_concentration = max(max(concentrations) for concentrations in concentrations_list)
-        ax.set_ylim([1.95, max_concentration])
+        ax.set_ylim([1.95, max_concentration[0]])
         # Create a scalar mappable object
         sm = cm.ScalarMappable(cmap = cm.get_cmap('plasma'), norm=plt.Normalize(vmin=min_concentration, vmax=max_concentration))
         sm.set_array([])
