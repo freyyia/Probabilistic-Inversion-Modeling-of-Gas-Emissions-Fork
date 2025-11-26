@@ -297,7 +297,7 @@ class SensorsSettings:
     
 
 
-    def plot_points_3d(grid, save = False, elev=20, azim=70):
+    def plot_points_3d(grid,extra=None, save = False, elev=20, azim=70):
         """
         Plot the points on the grid in 3D space.
 
@@ -318,11 +318,19 @@ class SensorsSettings:
         y_coords = [grid[:][i][1] for i in range(len(grid))]
         z_coords = [grid[:][i][2] for i in range(len(grid))]
 
+        if extra is not None:
+            x_coords.append(extra[0])
+            y_coords.append(extra[1])
+            z_coords.append(extra[2])
+
         # Create the plot
         fig = plt.figure(figsize=(7, 7))
         ax = fig.add_subplot(111, projection='3d')
         for i in range(len(grid)):
             ax.scatter(x_coords[i], y_coords[i], z_coords[i], s=55, c=colors[i], marker='*')
+        if extra is not None:
+            ax.scatter(x_coords[-1], y_coords[-1], z_coords[-1], s=55, c=colors[0], marker='+')
+
         ax.set_xlabel('$x$: location (m)', fontsize=24, labelpad=15)
         ax.set_ylabel('$y$: location (m)', fontsize=24, labelpad=15)
         ax.set_zlabel('$z$: location (m)', fontsize=24, labelpad=15)

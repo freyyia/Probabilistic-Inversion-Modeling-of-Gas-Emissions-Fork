@@ -22,6 +22,7 @@ source_location = gp.SourceLocation(
     source_location_y = jnp.array([50.0]),
     source_location_z = jnp.array([5.0]),
 )
+extra = [50.0, 50.0, 5.0]
 
 #define wind field
 wind_field = gp.WindField(
@@ -68,7 +69,7 @@ sensor_location = gp.SensorsSettings.grid_of_sensors(
     p1, p2, p3, p4, number_of_sensors, layout)
 
 # Plot the points in the grid
-gp.SensorsSettings.plot_points_3d(sensor_location, False)
+gp.SensorsSettings.plot_points_3d(sensor_location, extra, False)
 
 
 sensors_settings =  gp.SensorsSettings(
