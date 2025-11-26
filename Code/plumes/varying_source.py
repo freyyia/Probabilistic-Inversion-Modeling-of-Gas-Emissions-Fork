@@ -42,4 +42,26 @@ class Model:
     def y(self,x_1,x_2,t):
         return A_matrix(self.x_1s,self.x_2s,x_1,x_2)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
 
+#Tests the model
+x_1s =0
+x_2s =0
+model = Model(x_1s,x_2s,beta,sigma_epsilon,s_function)
+t=1
+x_1 = 1
+x_2 = 1
+y = model.y(x_1,x_2,t)
+print(y)
+#Plots over spatial grid for fixed time t
+x_1 = np.linspace(-1,1,100)
+x_2 = np.linspace(-1,1,100)
+X_1,X_2 = np.meshgrid(x_1,x_2)
+Y = np.array([model.y(x_1,x_2,t) for x_1,x_2 in zip(X_1.flatten(),X_2.flatten())]).reshape(X_1.shape)
+plt.contourf(X_1,X_2,Y)
+plt.colorbar()
+plt.show()
+# Now varies time in plot too
+
+
+
+
 
