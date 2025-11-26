@@ -92,6 +92,8 @@ fixed = gaussianplume.fixed_objects_of_gridfree_coupling_matrix()
 # this computed the coupling matrix using the gaussian plume model
 A = gaussianplume.temporal_gridfree_coupling_matrix(fixed)
 
+np.save('A_matrix.npy', A)
+
 
 gaussianplume.gaussian_plume_plot()
 
