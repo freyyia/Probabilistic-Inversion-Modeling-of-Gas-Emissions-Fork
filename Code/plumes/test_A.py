@@ -88,4 +88,5 @@ fixed = gaussianplume.fixed_objects_of_gridfree_coupling_matrix()
 A = gaussianplume.temporal_gridfree_coupling_matrix(fixed)
 
 
+gaussianplume.gaussian_plume_plot()
 
