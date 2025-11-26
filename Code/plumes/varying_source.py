@@ -1,15 +1,14 @@
-# DEfine model y(t,x)=A(x)s(t)+beta+epsilon
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from source_varying_functions import s_function, A_matrix, rwmh, log_likelihood_y
 import numpy as np
 import matplotlib.pyplot as plt
 from math import cos, sin
 from collections.abc import Iterable
-def s_function(t,ak,bk,a0):
-    n_coeff = ak.shape[0]
-    constant = a0
-    cosines = [cos(2*np.pi*(k+1)*t) for k in range(n_coeff)]
-    sines = [sin(2*np.pi*(k+1)*t) for k in range(n_coeff)]
-    return np.dot(ak,cosines) + np.dot(bk,sines) + a0
+# s(t)=sum_k a_k cost(2pi kt) + sum_k b_k sin(2pi kt) + a_0
+
 
 
 #Test s_function
@@ -27,8 +26,9 @@ plt.show()
 
 #Defines the coupling matrix that  maps source (x_s,y_s) to concentration at (x,y)
 # 
-def A_matrix(x_1s,x_2s,x_1,x_2):
-    return np.exp(-((x_1s-x_1)**2+(x_2s-x_2)**2))
+
+Asaved = np.load('A_matrix.npy')
+
 
 beta = 1
 sigma_epsilon = 0.01
@@ -45,8 +45,8 @@ class Model:
         return self.A_matrix(self.x_1s,self.x_2s,x_1,x_2)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
 
 #Tests the model
-x_1s =0
-x_2s =0
+x_1s =50
+x_2s =50
 model = Model(x_1s,x_2s,beta,sigma_epsilon,s_function,A_matrix)
 t=0.5
 x_1 = 1
@@ -109,45 +109,7 @@ def gen_data(model,T):
 
 
 # Function for RWMHS given starting point, variance, time steps and posterior
-def rwmh(start_point, proposal_variance, n_steps, log_posterior):
-    """
-    Random Walk Metropolis-Hastings Sampler.
 
-    Args:
-        start_point (np.array): Starting point for the chain.
-        proposal_variance (float or np.array): Variance of the Gaussian proposal distribution.
-        n_steps (int): Number of iterations.
-        log_posterior (function): Function that returns the log posterior probability of a point.
-
-    Returns:
-        chain (np.array): The MCMC chain.
-        acceptance_rate (float): The acceptance rate of the chain.
-    """
-    current_point = np.array(start_point)
-    current_log_prob = log_posterior(current_point)
-    
-    chain = [current_point]
-    accepted_count = 0
-    
-    for _ in range(n_steps):
-        # Propose a new point
-        proposal = current_point + np.random.normal(0, np.sqrt(proposal_variance), size=current_point.shape)
-        proposal_log_prob = log_posterior(proposal)
-        
-        # Calculate acceptance probability
-        # We use log scale for numerical stability
-        acceptance_ratio = proposal_log_prob - current_log_prob
-        
-        # Accept or reject
-        if np.log(np.random.rand()) < acceptance_ratio:
-            current_point = proposal
-            current_log_prob = proposal_log_prob
-            accepted_count += 1
-            
-        chain.append(current_point)
-        
-    acceptance_rate = accepted_count / n_steps
-    return np.array(chain), acceptance_rate
 
 #%%
 # Generate data  on grid
@@ -163,62 +125,18 @@ def log_prior_coefficients(coeff):
 
 coefficients = [a0,ak,bk]
 print(log_prior_coefficients(coefficients))
-
+#y=As+beta+epsilon
 # %%
-def log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix):
-    # Unpack coefficients
-    a0 = coeff[0]
-    ak = np.atleast_1d(coeff[1])
-    bk = np.atleast_1d(coeff[2])
-    
-    # Grid parameters
-    T = 10
-    nt = 100
-    nx = 100
-    
-    # Create grids
-    times = np.linspace(0, T, nt)
-    x_1 = np.linspace(-1, 1, nx)
-    x_2 = np.linspace(-1, 1, nx)
-    X_1, X_2 = np.meshgrid(x_1, x_2)
-    
-    # Flatten spatial coordinates
-    X1_flat = X_1.flatten()
-    X2_flat = X_2.flatten()
-    
-    # Calculate A matrix (spatial component)
-    A = A_matrix(x_1s, x_2s, X1_flat, X2_flat)
-    
-    # Reshape data to (nt, nx*nx)
-    data_reshaped = data.reshape(nt, -1)
-    
-    log_likelihood = 0
-    var = sigma_epsilon**2
-    
-    # Iterate over time steps
-    for i, t in enumerate(times):
-        # Calculate source function value at time t
-        st = s_function(t, ak, bk, a0)
-        
-        # Calculate expected value mu(x, t)
-        mu = A * st + beta
-        
-        # Get observed data for this time step
-        y_obs = data_reshaped[i]
-        
-        # Update log likelihood
-        sq_residuals = (y_obs - mu)**2
-        log_likelihood += -0.5 * np.sum(sq_residuals) / var
-        
-    return log_likelihood
 
 # Test log_likelihood_y
 ll = log_likelihood_y(coefficients, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix)
 print(f"Log likelihood: {ll}")
 
-def log_posterior(coeff):
-    return log_prior_coefficients(coeff)+log_likelihood_y(coeff,data,x_1s,x_2s,beta,sigma_epsilon,A_matrix)
 
+
+def log_posterior(coeff):
+    return log_prior_coefficients(coeff) + log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix)
+    
 #Run rwmh
 initial_point = [0,0,0]
 chain,acceptance_rate = rwmh(initial_point,1,10000,log_posterior)
