@@ -26,10 +26,20 @@ plt.show()
 
 #Defines the coupling matrix that  maps source (x_s,y_s) to concentration at (x,y)
 # 
-def A_matrix(x_s,y_s,x,y):
-    return np.exp(-((x_s-x)**2+(y_s-y)**2))
+def A_matrix(x_1s,x_2s,x_1,x_2):
+    return np.exp(-((x_1s-x_1)**2+(x_2s-x_2)**2))
 
 beta = 1
 sigma_epsilon = 0.1
+# Define model class y(t,x)=A(x)s(t)+beta+epsilon
+class Model:
+    def __init__(self,x_1s,x_2s,beta,sigma_epsilon,s_function):
+        self.x_1s = x_1s
+        self.x_2s = x_2s
+        self.beta = beta
+        self.sigma_epsilon = sigma_epsilon
+        self.s_function = s_function
+    def y(self,x_1,x_2,t):
+        return A_matrix(self.x_1s,self.x_2s,x_1,x_2)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
 
-def
+
