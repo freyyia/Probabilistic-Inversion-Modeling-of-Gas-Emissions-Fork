@@ -163,5 +163,18 @@ coefficients = [a0,ak,bk]
 print(log_prior_coefficients(coefficients))
 
 # %%
-def log_likelihood_y(coeff,data,model):
-    y = model.y(coeff[0],coeff[1],coeff[2])
+def log_likelihood_y(coeff,data,x_1s,x_2s,beta,sigma_epsilon,A_matrix):
+    model =Model(x_1s,x_2s,beta,sigma_epsilon,s_function,A_matrix)
+    t = np.linspace(0,10,100)
+    x1 = np.linspace(-1,1,100)
+    x2 = np.linspace(-1,1,100)
+    X1,X2 = np.meshgrid(x1,x2)
+    for x in grid x
+        for t in grid t
+           mu = A_matrix(x_1s,x_2s,x)*s_function(t,coeff)+beta
+           log_likelihood += -1/2 * (data[x,t]-mu)**2/sigma_epsilon**2
+    return log_likelihood
+
+    
+    
+
