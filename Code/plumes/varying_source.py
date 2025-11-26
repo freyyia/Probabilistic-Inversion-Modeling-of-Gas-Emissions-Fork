@@ -1,9 +1,8 @@
-# DEfine model y(t,x)=A(x)s(t)+beta+epsilon
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-import source_varying_functions as svf
+from source_varying_functions import s_function, A_matrix, rwmh, log_likelihood_y
 import numpy as np
 import matplotlib.pyplot as plt
 from math import cos, sin
@@ -78,6 +77,14 @@ contour = ax.contourf(X_1, X_2, Y, levels=20, cmap='viridis')
 cbar = fig.colorbar(contour)
 ax.set_title(f'Observation Model at t={t_start:.2f}')
 
+def update(frame):
+    ax.clear()
+    t = frame * 0.01  # Time step
+    Y = np.array([model.y(x_1, x_2, t) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
+    contour = ax.contourf(X_1, X_2, Y, levels=20, cmap='viridis')
+    ax.set_title(f'Observation Model at t={t:.2f}')
+    return contour,
+
 # Create animation
 ani = animation.FuncAnimation(fig, update, frames=50, interval=200)
 
@@ -127,6 +134,9 @@ print(f"Log likelihood: {ll}")
 
 
 
+def log_posterior(coeff):
+    return log_prior_coefficients(coeff) + log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix)
+    
 #Run rwmh
 initial_point = [0,0,0]
 chain,acceptance_rate = rwmh(initial_point,1,10000,log_posterior)

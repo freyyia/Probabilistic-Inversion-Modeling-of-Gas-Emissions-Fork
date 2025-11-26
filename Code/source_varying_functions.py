@@ -1,3 +1,6 @@
+import numpy as np
+from math import cos, sin
+
 def s_function(t,ak,bk,a0):
     n_coeff = ak.shape[0]
     constant = a0
@@ -7,14 +10,6 @@ def s_function(t,ak,bk,a0):
 
 def A_matrix(x_1s,x_2s,x_1,x_2):
     return np.exp(-((x_1s-x_1)**2+(x_2s-x_2)**2))
-
-def update(frame):
-    ax.clear()
-    t = frame * 0.01  # Time step
-    Y = np.array([model.y(x_1, x_2, t) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
-    contour = ax.contourf(X_1, X_2, Y, levels=20, cmap='viridis')
-    ax.set_title(f'Observation Model at t={t:.2f}')
-    return contour,
 
 def rwmh(start_point, proposal_variance, n_steps, log_posterior):
     """
@@ -66,12 +61,12 @@ def log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix):
     # Grid parameters
     T = 10
     nt = 100
-    nx = 1100
+    nx = 100
     
     # Create grids
     times = np.linspace(0, T, nt)
-    x_1 = np.linspace(0, 110, nx)
-    x_2 = np.linspace(0, 110, nx)
+    x_1 = np.linspace(-1, 1, nx)
+    x_2 = np.linspace(-1, 1, nx)
     X_1, X_2 = np.meshgrid(x_1, x_2)
     
     # Flatten spatial coordinates
@@ -103,6 +98,3 @@ def log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix):
         log_likelihood += -0.5 * np.sum(sq_residuals) / var
         
     return log_likelihood
-
-def log_posterior(coeff):
-    return log_prior_coefficients(coeff)+log_likelihood_y(coeff,data,x_1s,x_2s,beta,sigma_epsilon,A_matrix)
