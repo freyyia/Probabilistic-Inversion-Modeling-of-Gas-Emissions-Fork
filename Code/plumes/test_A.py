@@ -20,9 +20,9 @@ grid = gp.Grid(
 source_location = gp.SourceLocation(
     source_location_x = jnp.array([50.0]),
     source_location_y = jnp.array([50.0]),
-    source_location_z = jnp.array([5.0]),
+    source_location_z = jnp.array([0.0]),
 )
-extra = [50.0, 50.0, 5.0]
+extra = [50.0, 50.0, 0.0]
 
 #define wind field
 wind_field = gp.WindField(
@@ -61,10 +61,10 @@ atmospheric_state = gp.AtmosphericState(
 layout = "grid"
 number_of_sensors = 36
 # define a grid of points
-p1 = (100,5,1)
-p2 = (100,5,20)
-p3 = (100,95,1)
-p4 = (100,95,20)
+p1 = (110,5,0)
+p2 = (70,5,0)
+p3 = (100,5,0)
+p4 = (70,70,0)
 sensor_location = gp.SensorsSettings.grid_of_sensors(
     p1, p2, p3, p4, number_of_sensors, layout)
 
@@ -92,10 +92,11 @@ fixed = gaussianplume.fixed_objects_of_gridfree_coupling_matrix()
 # this computed the coupling matrix using the gaussian plume model
 A = gaussianplume.temporal_gridfree_coupling_matrix(fixed)
 
-np.save('A_matrix.npy', A)
+# np.save('A_matrix.npy', A)
 
+#%%
 
-gaussianplume.gaussian_plume_plot()
+gaussianplume.gaussian_plume_plot(1)
 
 
 background = gp.BackgroundGas(grid, source_location, atmospheric_state)
