@@ -1504,7 +1504,7 @@ class BackgroundGas(Grid, SourceLocation, AtmosphericState):
             axs[0].set_yticklabels(self.grid.y)
             axs[0].set_xticklabels(self.grid.x)
         axs[0].invert_yaxis()
-        axs[0].scatter(float(self.source_location.source_location_x/self.grid.dx) - (self.grid.x_range[0]/self.grid.dx), float(self.source_location.source_location_y/self.grid.dy)-(self.grid.y_range[0]/self.grid.dy), marker='.', s=100, color='orange')
+        axs[0].scatter(float(self.source_location.source_location_x[0]/self.grid.dx) - (self.grid.x_range[0]/self.grid.dx), float(self.source_location.source_location_y[0]/self.grid.dy)-(self.grid.y_range[0]/self.grid.dy), marker='.', s=100, color='orange')
         axs[0].set_title("Original random Gaussian samples")
         colorbar = axs[0].collections[0].colorbar
         colorbar.set_label('Parts per million (PPM)')
@@ -1521,7 +1521,7 @@ class BackgroundGas(Grid, SourceLocation, AtmosphericState):
             axs[1].set_yticklabels(self.grid.y)
             axs[1].set_xticklabels(self.grid.x)
         axs[1].invert_yaxis()
-        axs[1].scatter(float(self.source_location.source_location_x/self.grid.dx), float(self.source_location.source_location_y/self.grid.dy), marker='.', s=100, color='orange')
+        axs[1].scatter(float(self.source_location.source_location_x[0]/self.grid.dx), float(self.source_location.source_location_y[0]/self.grid.dy), marker='.', s=100, color='orange')
         axs[1].set_title("Spatially smoothed background gas concentration")
         colorbar = axs[1].collections[0].colorbar
         colorbar.set_label('Parts per million (PPM)')
