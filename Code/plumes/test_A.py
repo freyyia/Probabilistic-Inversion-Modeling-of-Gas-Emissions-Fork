@@ -1,7 +1,11 @@
 
+#%%
 import sourceinversion.atmospheric_measurements as gp
 import jax.numpy as jnp
+import numpy as np
+import matplotlib.pyplot as plt
 
+#%%
 #define grid
 grid = gp.Grid(
     x_range = (jnp.array(0.0), jnp.array(110.0)), 
@@ -99,11 +103,13 @@ truth = sensors.temporal_sensors_measurements(grided=False, beam=False)
 # Data
 data = truth[0]
 
-import matplotlib.pyplot as plt
 
 #%%
+
+colors = plt.cm.tab10(np.linspace(0, 1, 6))
 plt.figure()
 for i in range(36):
-    plt.plot(data.reshape(36,-1)[i,:], 'o')
+    color = colors[i // 6]
+    plt.plot(data.reshape(36,-1)[i,:], 'o', color=color, label=f'Sensor {i+1}' if i < 6 else "")
 
 # %%
