@@ -3,8 +3,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from math import cos, sin
+from collections.abc import Iterable
 def s_function(t,ak,bk,a0):
-    n_coeff = len(ak)
+    n_coeff = ak.shape[0]
     constant = a0
     cosines = [cos(2*np.pi*(k+1)*t) for k in range(n_coeff)]
     sines = [sin(2*np.pi*(k+1)*t) for k in range(n_coeff)]
@@ -13,8 +14,8 @@ def s_function(t,ak,bk,a0):
 
 #Test s_function
 a0 =4
-ak = np.array([3,2,1])
-bk = np.array([3,2,1])
+ak = np.array([1])
+bk = np.array([1])
 t = 1
 
 print(s_function(t,ak,bk,a0))
@@ -104,6 +105,7 @@ def gen_data(model,T):
     for t in np.linspace(0,T,100):
         Yt = np.array([model.y(x_1, x_2, t) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
         Y = np.append(Y,Yt)
+    return Y
 
 
 # Function for RWMHS given starting point, variance, time steps and posterior
@@ -153,8 +155,8 @@ data = gen_data(model,10)
 #Define log prior
 def log_prior_coefficients(coeff):
     a0 = coeff[0]
-    ak = coeff[1]
-    bk = coeff[2]
+    ak = np.atleast_1d(coeff[1])
+    bk = np.atleast_1d(coeff[2])
     n_coeff = len(ak)
     variance_k = [1/(1+(k+1)**2) for k in range(n_coeff)]
     return -1/2 * np.sum((ak)**2/variance_k) -1/2 * np.sum((bk)**2/variance_k) -1/2 * (a0)**2
@@ -163,18 +165,62 @@ coefficients = [a0,ak,bk]
 print(log_prior_coefficients(coefficients))
 
 # %%
-def log_likelihood_y(coeff,data,x_1s,x_2s,beta,sigma_epsilon,A_matrix):
-    model =Model(x_1s,x_2s,beta,sigma_epsilon,s_function,A_matrix)
-    t = np.linspace(0,10,100)
-    x1 = np.linspace(-1,1,100)
-    x2 = np.linspace(-1,1,100)
-    X1,X2 = np.meshgrid(x1,x2)
-    for x in grid x
-        for t in grid t
-           mu = A_matrix(x_1s,x_2s,x)*s_function(t,coeff)+beta
-           log_likelihood += -1/2 * (data[x,t]-mu)**2/sigma_epsilon**2
+def log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix):
+    # Unpack coefficients
+    a0 = coeff[0]
+    ak = np.atleast_1d(coeff[1])
+    bk = np.atleast_1d(coeff[2])
+    
+    # Grid parameters
+    T = 10
+    nt = 100
+    nx = 100
+    
+    # Create grids
+    times = np.linspace(0, T, nt)
+    x_1 = np.linspace(-1, 1, nx)
+    x_2 = np.linspace(-1, 1, nx)
+    X_1, X_2 = np.meshgrid(x_1, x_2)
+    
+    # Flatten spatial coordinates
+    X1_flat = X_1.flatten()
+    X2_flat = X_2.flatten()
+    
+    # Calculate A matrix (spatial component)
+    A = A_matrix(x_1s, x_2s, X1_flat, X2_flat)
+    
+    # Reshape data to (nt, nx*nx)
+    data_reshaped = data.reshape(nt, -1)
+    
+    log_likelihood = 0
+    var = sigma_epsilon**2
+    
+    # Iterate over time steps
+    for i, t in enumerate(times):
+        # Calculate source function value at time t
+        st = s_function(t, ak, bk, a0)
+        
+        # Calculate expected value mu(x, t)
+        mu = A * st + beta
+        
+        # Get observed data for this time step
+        y_obs = data_reshaped[i]
+        
+        # Update log likelihood
+        sq_residuals = (y_obs - mu)**2
+        log_likelihood += -0.5 * np.sum(sq_residuals) / var
+        
     return log_likelihood
 
-    
-    
+# Test log_likelihood_y
+ll = log_likelihood_y(coefficients, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix)
+print(f"Log likelihood: {ll}")
 
+def log_posterior(coeff):
+    return log_prior_coefficients(coeff)+log_likelihood_y(coeff,data,x_1s,x_2s,beta,sigma_epsilon,A_matrix)
+
+#Run rwmh
+initial_point = [0,0,0]
+chain,acceptance_rate = rwmh(initial_point,1,10000,log_posterior)
+print(chain)
+print(acceptance_rate)
