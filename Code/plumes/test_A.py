@@ -90,3 +90,20 @@ A = gaussianplume.temporal_gridfree_coupling_matrix(fixed)
 
 gaussianplume.gaussian_plume_plot()
 
+
+background = gp.BackgroundGas(grid, source_location, atmospheric_state)
+background.background_plot(save=False, format='png')
+sensors = gp.Sensors(gaussianplume, background, sensors_settings)
+# True source and atmospheric parameter values and sensor measurement data
+truth = sensors.temporal_sensors_measurements(grided=False, beam=False)
+# Data
+data = truth[0]
+
+import matplotlib.pyplot as plt
+
+#%%
+plt.figure()
+for i in range(36):
+    plt.plot(data.reshape(36,-1)[i,:], 'o')
+
+# %%
