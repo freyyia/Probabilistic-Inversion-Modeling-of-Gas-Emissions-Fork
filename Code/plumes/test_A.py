@@ -7,10 +7,10 @@ import matplotlib.pyplot as plt
 
 #%%
 #Parameters
-Lx = 1
-Ly = 1
-x1_s = 0
-x2_s = 0
+Lx = 110.0
+Ly = 110.0
+x1_s = 50.0
+x2_s = 50.0
 w_speed = 6
 w_direction = -70
 Nt = 100
@@ -20,9 +20,9 @@ sigma_w = 10
 rho_w = 0.5
 
 grid = gp.Grid(
-    x_range = (jnp.array(-Lx), jnp.array(Lx)), 
-    y_range = (jnp.array(-Ly), jnp.array(Ly)),
-    z_range= (jnp.array(0), jnp.array(0)),
+    x_range = (jnp.array(0.0), jnp.array(Lx)), 
+    y_range = (jnp.array(0.0), jnp.array(Ly)),
+    z_range= (jnp.array(0.0), jnp.array(0)),
     dx = jnp.array(0.1),
     dy = jnp.array(0.1),
     dz = jnp.array(1),
@@ -164,41 +164,43 @@ beta = 1
 sigma_epsilon = 0.01
 # Define model class y(t,x)=A(x)s(t)+beta+epsilon
 class Model:
-    def __init__(self,x_1s,x_2s,beta,sigma_epsilon,s_function, A_matrix):
-        self.x_1s = x_1s
-        self.x_2s = x_2s
+    def __init__(self,x1_s,x2_s,beta,sigma_epsilon,s_function, A_matrix):
+        self.x1_s = x1_s
+        self.x2_s = x2_s
         self.beta = beta
         self.sigma_epsilon = sigma_epsilon
         self.s_function = s_function
         self.A_matrix = A_matrix
     def y(self,x_1,x_2,t):
-        return self.A_matrix(self.x_1s,self.x_2s,x_1,x_2)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
+        return self.A_matrix(self.x1_s,self.x2_s,x_1,x_2)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
 
+#%%
 #Tests the model
-x_1s =50
-x_2s =50
-model = Model(x_1s,x_2s,beta,sigma_epsilon,s_function,A_matrix)
+model = Model(x1_s,x2_s,beta,sigma_epsilon,s_function,A_matrix)
 t=0.5
-x_1 = 1
-x_2 = 1
+x_1 = 51
+x_2 = 51
 y = model.y(x_1,x_2,t)
 print(y)
 #Plots over spatial grid for fixed time t
-x_1 = np.linspace(-1,1,100)
-x_2 = np.linspace(-1,1,100)
+x_1 = np.linspace(49,51,100)
+x_2 = np.linspace(49,51,100)
 X_1,X_2 = np.meshgrid(x_1,x_2)
 Y = np.array([model.y(x_1,x_2,t) for x_1,x_2 in zip(X_1.flatten(),X_2.flatten())]).reshape(X_1.shape)
 plt.contourf(X_1,X_2,Y)
 plt.colorbar()
 plt.show()
+
+#%%
 # Now varies time in plot too
 import matplotlib.animation as animation
 
 # Set up the figure and axis
 fig, ax = plt.subplots()
-x_1 = np.linspace(-1, 1, 100)
-x_2 = np.linspace(-1, 1, 100)
+x_1 = np.linspace(49, 51, 100)
+x_2 = np.linspace(49, 51, 100)
 X_1, X_2 = np.meshgrid(x_1, x_2)
+
 
 # Initial plot
 t_start = 0
@@ -226,16 +228,18 @@ except Exception as e:
     print(f"Could not save animation: {e}")
     plt.show()
 
+#%%
 # Generate data
-def gen_data(model,T):
-    x_1 = np.linspace(-1, 1, 100)
-    x_2 = np.linspace(-1, 1, 100)
-    X_1, X_2 = np.meshgrid(x_1, x_2)
-    Y = np.array([])
-    for t in np.linspace(0,T,100):
-        Yt = np.array([model.y(x_1, x_2, t) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
-        Y = np.append(Y,Yt)
-    return Y
+def gen_data(T):
+    s_values = map(lambda t: s_function(t,ak,bk,a0), np.linspace(0,T,
+            gaussianplume.wind_field.number_of_time_steps))
+
+    measurements =  np.matmul(A, s_values) + 1 + np.random.normal(0, 0.1, 
+    gaussianplume.sensors_settings.sensor_number * 
+    gaussianplume.wind_field.number_of_time_steps)
+    return measurements
+
+
 
 
 # Function for RWMHS given starting point, variance, time steps and posterior
@@ -243,7 +247,7 @@ def gen_data(model,T):
 
 #%%
 # Generate data  on grid
-data = gen_data(model,10)
+data = gen_data(10)
 #Define log prior
 def log_prior_coefficients(coeff):
     a0 = coeff[0]
@@ -259,13 +263,13 @@ print(log_prior_coefficients(coefficients))
 # %%
 
 # Test log_likelihood_y
-ll = log_likelihood_y(coefficients, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix)
+ll = log_likelihood_y(coefficients, data, x1_s, x2_s, beta, sigma_epsilon, A_matrix)
 print(f"Log likelihood: {ll}")
 
 
 
 def log_posterior(coeff):
-    return log_prior_coefficients(coeff) + log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix)
+    return log_prior_coefficients(coeff) + log_likelihood_y(coeff, data, x1_s, x2_s, beta, sigma_epsilon, A_matrix)
     
 #Run rwmh
 initial_point = [0,0,0]
