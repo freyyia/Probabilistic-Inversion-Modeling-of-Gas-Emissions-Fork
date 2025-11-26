@@ -1,7 +1,11 @@
 
+#%%
 import sourceinversion.atmospheric_measurements as gp
 import jax.numpy as jnp
+import numpy as np
+import matplotlib.pyplot as plt
 
+#%%
 #define grid
 grid = gp.Grid(
     x_range = (jnp.array(0.0), jnp.array(110.0)), 
@@ -88,4 +92,24 @@ fixed = gaussianplume.fixed_objects_of_gridfree_coupling_matrix()
 A = gaussianplume.temporal_gridfree_coupling_matrix(fixed)
 
 
+gaussianplume.gaussian_plume_plot()
 
+
+background = gp.BackgroundGas(grid, source_location, atmospheric_state)
+background.background_plot(save=False, format='png')
+sensors = gp.Sensors(gaussianplume, background, sensors_settings)
+# True source and atmospheric parameter values and sensor measurement data
+truth = sensors.temporal_sensors_measurements(grided=False, beam=False)
+# Data
+data = truth[0]
+
+
+#%%
+
+colors = plt.cm.tab10(np.linspace(0, 1, 6))
+plt.figure()
+for i in range(36):
+    color = colors[i // 6]
+    plt.plot(data.reshape(36,-1)[i,:], 'o', color=color, label=f'Sensor {i+1}' if i < 6 else "")
+
+# %%
