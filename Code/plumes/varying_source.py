@@ -28,7 +28,7 @@ plt.close()
 T=10
 Nt=10
 Nx=100
-Lx=1
+Lx=5
 # Constants
 physical_constants = {
     'RHO_CH4': 0.656, # kg/m^3, density of methane at 25 deg C and 1 atm
@@ -105,26 +105,26 @@ plt.close()
 # Function for RWMHS given starting point, variance, time steps and posterior
 
 
-# #%%
-# # Generate data  on grid
-# data = model.gen_data(10,100,100,1,ak,bk,a0)
-# #Test log_prior
-# coefficients = [a0,ak,bk]
-# print(log_prior_coefficients(coefficients))
-# #y=As+beta+epsilon
-# # %%
+#%%
+# Generate data  on grid
+data = model.gen_data(10,100,100,1,ak,bk,a0)
+#Test log_prior
+coefficients = [a0,ak,bk]
+print(log_prior_coefficients(coefficients))
+#y=As+beta+epsilon
+# %%
 
-# # Test log_likelihood_y
-# ll = model.log_likelihood_y(coefficients,T,Nt,Nx,data)
-# print(f"Log likelihood: {ll}")
+# Test log_likelihood_y
+ll = model.log_likelihood_y(coefficients,T,Nt,Nx,data)
+print(f"Log likelihood: {ll}")
 
 
 
-# def log_posterior(coeff):
-#     return log_prior_coefficients(coeff) + model.log_likelihood_y(coeff,T,Nt,Nx,data)
+def log_posterior(coeff):
+    return log_prior_coefficients(coeff) + model.log_likelihood_y(coeff,T,Nt,Nx,data)
     
-# #Run rwmh
-# initial_point = [0,0,0]
-# chain,acceptance_rate = rwmh(initial_point,1,10000,log_posterior)
-# print(chain)
-# print(acceptance_rate)
+#Run rwmh
+initial_point = [0,0,0]
+chain,acceptance_rate = rwmh(initial_point,1,10000,log_posterior)
+print(chain)
+print(acceptance_rate)

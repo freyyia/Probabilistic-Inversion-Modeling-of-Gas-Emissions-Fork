@@ -74,6 +74,8 @@ def A_matrix(x_sensor, y_sensor, constants):
     
     # Project to get Downwind (dist_R) and Crosswind (dist_H) distances
     dist_R = np.dot(vec_source_to_sensor, u_vec)
+    if dist_R <= 0.1: # Small epsilon to prevent division by zero or negative log
+        return 0.0
     dist_H = np.dot(vec_source_to_sensor, wind_vec_perp)
     dist_V = Z - ZS 
 
@@ -87,7 +89,7 @@ def A_matrix(x_sensor, y_sensor, constants):
     sigma_V = a_V * (dist_R * np.tan(gamma_V))**b_V + h
 
     rho_ch4 = constants['RHO_CH4']
-    pre_factor = (10**6 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
+    pre_factor = (0 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
     
     term_horizontal = np.exp(-(dist_H**2) / (2 * sigma_H**2))
     term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
@@ -115,9 +117,7 @@ def A_matrix(x_sensor, y_sensor, constants):
 
 
 class Model:
-    def __init__(self,x_1s,x_2s,beta,sigma_epsilon,s_function, physical_constants):
-        self.x_1s = x_1s
-        self.x_2s = x_2s
+    def __init__(self,beta,sigma_epsilon,s_function, physical_constants):
         self.beta = beta
         self.sigma_epsilon = sigma_epsilon
         self.s_function = s_function
