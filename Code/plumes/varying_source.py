@@ -23,26 +23,37 @@ t = np.linspace(0,0.5,100)
 plt.plot(t,list(map(lambda t: s_function(t,ak,bk,a0),t)))
 plt.show()
 
+# Constants
+physical_constants = {
+    'RHO_CH4': 0.656, # kg/m^3, density of methane at 25 deg C and 1 atm
+    'U': 5.0,         # m/s, wind speed
+    'SIGMA_H': 10.0,  # m, horizontal dispersion coefficient
+    'SIGMA_V': 10.0,  # m, vertical dispersion coefficient
+    'N_REFL': 5,      # number of reflections
+    'P': 1000.0,      # m, PBL height
+    'XS': 50.0,       # m, source x-coordinate
+    'YS': 50.0,       # m, source y-coordinate
+    'ZS': 50.0,       # m, source height
+    'Z': 2.0         # m, sensor height
+}
 
-#Defines the coupling matrix that  maps source (x_s,y_s) to concentration at (x,y)
-# 
 
-Asaved = np.load('A_matrix.npy')
 
 
 beta = 1
 sigma_epsilon = 0.01
 # Define model class y(t,x)=A(x)s(t)+beta+epsilon
 class Model:
-    def __init__(self,x_1s,x_2s,beta,sigma_epsilon,s_function, A_matrix):
+    def __init__(self,x_1s,x_2s,beta,sigma_epsilon,s_function, A_matrix, physical_constants):
         self.x_1s = x_1s
         self.x_2s = x_2s
         self.beta = beta
         self.sigma_epsilon = sigma_epsilon
         self.s_function = s_function
         self.A_matrix = A_matrix
+        self.physical_constants = physical_constants
     def y(self,x_1,x_2,t):
-        return self.A_matrix(self.x_1s,self.x_2s,x_1,x_2)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
+        return self.A_matrix(self.x_1s,self.x_2s,x_1,x_2,self.physical_constants)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
 
 #Tests the model
 x_1s =50
