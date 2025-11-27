@@ -1,0 +1,3 @@
+RMSE Static: 0.8004
+RMSE Dynamic: 0.0329
+Improvement: 95.9%
