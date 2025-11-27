@@ -103,7 +103,7 @@ def A_matrix(x_sensor, y_sensor, constants):
         sigma_V = a_V * (dist_R_valid * np.tan(gamma_V))**b_V + h
         
         rho_ch4 = constants['RHO_CH4']
-        pre_factor = (10 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
+        pre_factor = (100 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
         
         term_horizontal = np.exp(-(dist_H_valid**2) / (2 * sigma_H**2))
         term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2)) 
