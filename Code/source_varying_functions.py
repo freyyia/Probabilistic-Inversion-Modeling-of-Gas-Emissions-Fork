@@ -76,9 +76,6 @@ def A_matrix(x_sensor, y_sensor, constants):
     dist_R = np.dot(vec_source_to_sensor, u_vec)
     dist_H = np.dot(vec_source_to_sensor, wind_vec_perp)
     dist_V = Z - ZS 
-    
-    if dist_R <= 0.1: # Small epsilon to prevent division by zero or negative log
-        return 0.0
 
     a_H, b_H = constants['a_H'], constants['b_H']
     a_V, b_V = constants['a_V'], constants['b_V']
