@@ -26,7 +26,7 @@ plt.plot(t,list(map(lambda t: s_function(t,ak,bk,a0),t)))
 plt.savefig('source_function_plot.png')
 plt.close()
 T=10
-Nt=100
+Nt=10
 Nx=100
 Lx=1
 # Constants
