@@ -38,8 +38,8 @@ physical_constants = {
     'SIGMA_V': 10.0,  # m, vertical dispersion coefficient
     'N_REFL': 5,      # number of reflections
     'P': 1000.0,      # m, PBL height
-    'XS': 0.0,       # m, source x-coordinate
-    'YS': 0.0,       # m, source y-coordinate
+    'XS': [0.0, 2.0],       # m, source x-coordinate (multiple sources)
+    'YS': [0.0, -2.0],       # m, source y-coordinate (multiple sources)
     'ZS': 0,       # m, source height
     'Z': 0,         # m, sensor height
     'a_H': 1,

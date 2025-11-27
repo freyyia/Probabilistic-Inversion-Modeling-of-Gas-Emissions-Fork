@@ -89,14 +89,20 @@ def A_matrix(x_sensor, y_sensor, constants, wind_vector=None):
     x_in = np.atleast_1d(x_sensor)
     y_in = np.atleast_1d(y_sensor)
     
-    dx = x_in - XS
-    dy = y_in - YS
+    # Now XS can be a list of x coordinates
+    dxlist = []
+    dylist = []
+    XS = np.atleast_1d(XS)
+    YS = np.atleast_1d(YS)
+    for i in range(len(XS)):
+        dxlist.append(x_in - XS[i])
+        dylist.append(y_in - YS[i])
     
     wind_vec_perp = np.array([-u_vec[1], u_vec[0]]) 
     
     # Project to get Downwind (dist_R) and Crosswind (dist_H) distances
-    dist_R = dx * u_vec[0] + dy * u_vec[1]
-    dist_H = dx * wind_vec_perp[0] + dy * wind_vec_perp[1]
+    dist_R = np.array(dxlist) * u_vec[0] + np.array(dylist) * u_vec[1]
+    dist_H = np.array(dxlist) * wind_vec_perp[0] + np.array(dylist) * wind_vec_perp[1]
     dist_V = Z - ZS 
 
     a_H, b_H = constants['a_H'], constants['b_H']
@@ -146,11 +152,23 @@ def A_matrix(x_sensor, y_sensor, constants, wind_vector=None):
         # Assign back to result
         result[valid_mask] = pre_factor * term_horizontal * term_vertical_total
     
-    # Return scalar if input was scalar
+    # Return result. Shape is (N_sources, N_pixels)
+    # If input was reshaped, we might want to reshape back, but since we have multiple sources,
+    # returning (N_sources, ...) is appropriate.
+    # If x_sensor was scalar, result is (N_sources, 1) -> (N_sources,)
     if np.isscalar(x_sensor) and np.isscalar(y_sensor):
-        return result[0]
+        return result.flatten()
     else:
-        return result.reshape(np.shape(x_sensor))
+        # If x_sensor was (N,), result is (N_sources, N)
+        # If x_sensor was (N, M), result is (N_sources, N*M) because we flattened inputs?
+        # Wait, inputs were np.atleast_1d.
+        # If x_sensor was grid (N, N), flattened to (N*N).
+        # We want to preserve the spatial shape if possible, but with N_sources dimension.
+        # Let's return (N_sources, original_shape)
+        original_shape = np.shape(x_sensor)
+        if len(original_shape) == 0:
+             return result.flatten()
+        return result.reshape((len(XS),) + original_shape)
 
 
 
@@ -170,7 +188,14 @@ class Model:
             A = A_matrix(x_1, x_2, self.physical_constants, wind_vector=current_wind)
         else:
             A = A_matrix(x_1, x_2, self.physical_constants)
-        return A * self.s_function(t, ak, bk, a0) + self.beta + np.random.normal(0, self.sigma_epsilon)
+            
+        # A is (N_sources, ...). Sum contributions.
+        if A.ndim > np.ndim(x_1): # Check if we have extra dimension for sources
+             A_sum = np.sum(A, axis=0)
+        else:
+             A_sum = A
+             
+        return A_sum * self.s_function(t, ak, bk, a0) + self.beta + np.random.normal(0, self.sigma_epsilon)
     # Generate data at Nt time steps
     def gen_data(self,T,Nt,Nx,Lx,ak,bk,a0):
         x_1 = np.linspace(-Lx, Lx, Nx)
@@ -215,8 +240,14 @@ class Model:
                 A = A_matrix(data['X1'], data['X2'], self.physical_constants, wind_vector=current_wind)
             else:
                 A = A_matrix(data['X1'], data['X2'], self.physical_constants)
+            
+            # A is (N_sources, ...). Sum contributions.
+            if A.ndim > data['X1'].ndim:
+                A_sum = np.sum(A, axis=0)
+            else:
+                A_sum = A
                 
-            mu = A*st + self.beta
+            mu = A_sum*st + self.beta
             
             # Get observed data for this time step
             y_obs = data_reshaped[i]
