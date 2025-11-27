@@ -125,7 +125,6 @@ class Model:
         self.sigma_epsilon = sigma_epsilon
         self.s_function = s_function
         self.physical_constants = physical_constants
-        self.A_matrix = A_matrix(self.x_1s,self.x_2s,physical_constants)
     # Observation at (x_1,x_2) at time t
     def y(self,x_1,x_2,t,ak,bk,a0):
         return A_matrix(x_1,x_2,self.physical_constants)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
@@ -164,7 +163,7 @@ class Model:
             st = self.s_function(t, ak, bk, a0)
             
             # Calculate expected value mu(x, t)
-            mu = self.A_matrix * st + self.beta
+            mu = A_matrix(self.x_1s,self.x_2s,self.physical_constants)*st + self.beta
             
             # Get observed data for this time step
             y_obs = data_reshaped[i]
