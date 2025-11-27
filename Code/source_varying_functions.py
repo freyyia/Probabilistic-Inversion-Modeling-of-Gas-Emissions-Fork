@@ -1,6 +1,14 @@
 import numpy as np
 from math import cos, sin
 
+
+
+def wind_function(t, wa0, wa, wb):
+    wind = np.array(wa0)
+    for k in range(len(wa)):
+        wind += wa[k] * cos(2 * np.pi * (k + 1) * t) + wb[k] * sin(2 * np.pi * (k + 1) * t)
+    return wind
+
 def s_function(t,ak,bk,a0):
     n_coeff = ak.shape[0]
     constant = a0
@@ -55,7 +63,7 @@ def rwmh(start_point, proposal_variance, n_steps, log_posterior):
 
 
 
-def A_matrix(x_sensor, y_sensor, constants):
+def A_matrix(x_sensor, y_sensor, constants, wind_vector=None):
     """
     Calculates the concentration using the Gaussian plume formula with reflections.
     Supports both scalar and vectorized (grid) inputs for x_sensor and y_sensor.
@@ -63,9 +71,18 @@ def A_matrix(x_sensor, y_sensor, constants):
     # 1. Extract Geometry & Wind
     XS, YS, ZS = constants['XS'], constants['YS'], constants['ZS'] # Source
     Z = constants['Z']  # Sensor Height
-    u_vec = np.array(constants['wind_vector'])
-    u_vec = u_vec / np.linalg.norm(u_vec) # Ensure unit vector
-    U_speed = constants['U']
+    
+    if wind_vector is not None:
+        U_speed = np.linalg.norm(wind_vector)
+        if U_speed > 1e-6:
+            u_vec = wind_vector / U_speed
+        else:
+            # Handle zero wind case if necessary, or assume small non-zero
+            u_vec = np.array([1.0, 0.0]) 
+    else:
+        u_vec = np.array(constants['wind_vector'])
+        u_vec = u_vec / np.linalg.norm(u_vec) # Ensure unit vector
+        U_speed = constants['U']
     
     # 2. Coordinate Rotation
     # Ensure inputs are arrays for uniform processing
@@ -145,7 +162,15 @@ class Model:
         self.physical_constants = physical_constants
     # Observation at (x_1,x_2) at time t
     def y(self,x_1,x_2,t,ak,bk,a0):
-        return A_matrix(x_1,x_2,self.physical_constants)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
+        wa0 = self.physical_constants.get('wa0')
+        wa = self.physical_constants.get('wa')
+        wb = self.physical_constants.get('wb')
+        if wa0 is not None and wa is not None and wb is not None:
+            current_wind = wind_function(t, wa0, wa, wb)
+            A = A_matrix(x_1, x_2, self.physical_constants, wind_vector=current_wind)
+        else:
+            A = A_matrix(x_1, x_2, self.physical_constants)
+        return A * self.s_function(t, ak, bk, a0) + self.beta + np.random.normal(0, self.sigma_epsilon)
     # Generate data at Nt time steps
     def gen_data(self,T,Nt,Nx,Lx,ak,bk,a0):
         x_1 = np.linspace(-Lx, Lx, Nx)
@@ -181,7 +206,17 @@ class Model:
             st = self.s_function(t, ak, bk, a0)
             
             # Calculate expected value mu(x, t)
-            mu = A_matrix(data['X1'],data['X2'],self.physical_constants)*st + self.beta
+            # Calculate expected value mu(x, t)
+            wa0 = self.physical_constants.get('wa0')
+            wa = self.physical_constants.get('wa')
+            wb = self.physical_constants.get('wb')
+            if wa0 is not None and wa is not None and wb is not None:
+                current_wind = wind_function(t, wa0, wa, wb)
+                A = A_matrix(data['X1'], data['X2'], self.physical_constants, wind_vector=current_wind)
+            else:
+                A = A_matrix(data['X1'], data['X2'], self.physical_constants)
+                
+            mu = A*st + self.beta
             
             # Get observed data for this time step
             y_obs = data_reshaped[i]

@@ -29,7 +29,7 @@ T=10
 Nt=10
 Nx=50
 Lx=5
-# Constants
+# Constants, now implmenting wind as Fourier sum
 physical_constants = {
     'RHO_CH4': 0.656, # kg/m^3, density of methane at 25 deg C and 1 atm
     'U': 5.0,         # m/s, wind speed
@@ -49,7 +49,10 @@ physical_constants = {
     'b_V': 1,
     'h': 1,
     'gamma_H': 1,
-    'gamma_V': 1
+    'gamma_V': 1,
+    'wa0': np.array([0.0, 5.0]), # Mean wind vector
+    'wa': [np.array([1.0, 0.0])], # Fourier coefficients for wind (j=1)
+    'wb': [np.array([0.0, 1.0])]
 }
 #%%
 beta = 1
