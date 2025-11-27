@@ -58,6 +58,7 @@ def rwmh(start_point, proposal_variance, n_steps, log_posterior):
 def A_matrix(x_sensor, y_sensor, constants):
     """
     Calculates the concentration using the Gaussian plume formula with reflections.
+    Supports both scalar and vectorized (grid) inputs for x_sensor and y_sensor.
     """
     # 1. Extract Geometry & Wind
     XS, YS, ZS = constants['XS'], constants['YS'], constants['ZS'] # Source
@@ -69,14 +70,18 @@ def A_matrix(x_sensor, y_sensor, constants):
     # 2. Coordinate Rotation
     dx = x_sensor - XS
     dy = y_sensor - YS
-    vec_source_to_sensor = np.array([dx, dy])
+    # vec_source_to_sensor = np.array([dx, dy]) # This creates shape (2, Nx, Nx) if inputs are grids
+    
     wind_vec_perp = np.array([-u_vec[1], u_vec[0]]) 
     
     # Project to get Downwind (dist_R) and Crosswind (dist_H) distances
-    dist_R = np.dot(vec_source_to_sensor, u_vec)
-    if dist_R <= 0.1: # Small epsilon to prevent division by zero or negative log
-        return 0.0
-    dist_H = np.dot(vec_source_to_sensor, wind_vec_perp)
+    # Manual dot product to handle broadcasting correctly
+    # dist_R = dx * u_x + dy * u_y
+    dist_R = dx * u_vec[0] + dy * u_vec[1]
+    
+    # dist_H = dx * perp_x + dy * perp_y
+    dist_H = dx * wind_vec_perp[0] + dy * wind_vec_perp[1]
+    
     dist_V = Z - ZS 
 
     a_H, b_H = constants['a_H'], constants['b_H']
@@ -85,34 +90,110 @@ def A_matrix(x_sensor, y_sensor, constants):
     gamma_H = constants['gamma_H']
     gamma_V = constants['gamma_V']
 
-    sigma_H = a_H * (dist_R * np.tan(gamma_H))**b_H + w
-    sigma_V = a_V * (dist_R * np.tan(gamma_V))**b_V + h
-
-    rho_ch4 = constants['RHO_CH4']
-    pre_factor = (0 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
+    # We need to handle the condition dist_R <= 0.1 safely for arrays
+    # Create a mask for valid downwind distances
+    # If inputs are scalars, this works as normal boolean. If arrays, it's a boolean array.
+    valid_mask = dist_R > 0.1
     
-    term_horizontal = np.exp(-(dist_H**2) / (2 * sigma_H**2))
-    term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
-
-    N_REFL = constants['N_REFL']
-    P = constants['P']
-    H = ZS 
-    
-    sum_refl = 0
-    for j in range(1, N_REFL + 1):
-        k1 = 2 * np.floor((j + 1) / 2) * P
-        num1 = (k1 + ((-1)**j * Z) - H)**2
-        exp1 = np.exp(-num1 / (2 * sigma_V**2))
+    # Initialize result array (or scalar) with zeros
+    if np.isscalar(dist_R):
+        if not valid_mask:
+            return 0.0
+        # If scalar and valid, we proceed. 
+        # To keep logic unified, we can just compute and return.
+        sigma_H = a_H * (dist_R * np.tan(gamma_H))**b_H + w
+        sigma_V = a_V * (dist_R * np.tan(gamma_V))**b_V + h
         
-        k2 = 2 * np.floor(j / 2) * P
-        num2 = (k2 + ((-1)**(j - 1) * Z) + H)**2
-        exp2 = np.exp(-num2 / (2 * sigma_V**2))
+        rho_ch4 = constants['RHO_CH4']
+        pre_factor = (10**3 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V) # Fixed 0/rho to 1/rho or Q/rho? 
+        # Wait, the original code had (0 / rho_ch4). That results in 0 always?
+        # Checking original code: pre_factor = (0 / rho_ch4) / ...
+        # That looks like a bug or placeholder. 
+        # Standard Gaussian plume is Q / (2 pi U sigma_y sigma_z).
+        # If Q is part of s(t), then A matrix is just the dispersion part.
+        # But (0/rho) makes everything zero. 
+        # The user said "Even when I set the scalign facotr to 0 I dont notice any changes in the A mtrix".
+        # If A matrix is always 0, then indeed nothing changes.
+        # Let's assume the user wants the dispersion term.
+        # The term (0 / rho_ch4) is definitely suspicious. 
+        # I will change it to 1.0 for now as a unit source, assuming s(t) scales it.
+        # Actually, let's look at the previous code again.
+        # Line 92: pre_factor = (0 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
+        # This effectively makes A_matrix return 0. 
+        # I should probably fix this to 1.0 or Q if Q is constant, but s(t) implies varying source.
+        # So A(x) should be the transport coefficient.
+        # I will change 0 to 1.0.
         
-        sum_refl += (exp1 + exp2)
+        pre_factor = (1.0) / (2 * np.pi * U_speed * sigma_H * sigma_V)
 
-    term_vertical_total = term_vertical_base + sum_refl
-    
-    return pre_factor * term_horizontal * term_vertical_total
+        term_horizontal = np.exp(-(dist_H**2) / (2 * sigma_H**2))
+        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
+
+        N_REFL = constants['N_REFL']
+        P = constants['P']
+        H = ZS 
+        
+        sum_refl = 0
+        for j in range(1, N_REFL + 1):
+            k1 = 2 * np.floor((j + 1) / 2) * P
+            num1 = (k1 + ((-1)**j * Z) - H)**2
+            exp1 = np.exp(-num1 / (2 * sigma_V**2))
+            
+            k2 = 2 * np.floor(j / 2) * P
+            num2 = (k2 + ((-1)**(j - 1) * Z) + H)**2
+            exp2 = np.exp(-num2 / (2 * sigma_V**2))
+            
+            sum_refl += (exp1 + exp2)
+
+        term_vertical_total = term_vertical_base + sum_refl
+        
+        return pre_factor * term_horizontal * term_vertical_total
+
+    else:
+        # Array case
+        result = np.zeros_like(dist_R)
+        
+        # Only compute for valid points to avoid warnings/errors
+        # We can use boolean indexing
+        
+        # Extract valid elements
+        dist_R_valid = dist_R[valid_mask]
+        dist_H_valid = dist_H[valid_mask]
+        
+        if dist_R_valid.size == 0:
+            return result
+            
+        sigma_H = a_H * (dist_R_valid * np.tan(gamma_H))**b_H + w
+        sigma_V = a_V * (dist_R_valid * np.tan(gamma_V))**b_V + h
+        
+        # pre_factor = (1.0) / (2 * np.pi * U_speed * sigma_H * sigma_V)
+        pre_factor = 1.0 / (2 * np.pi * U_speed * sigma_H * sigma_V)
+        
+        term_horizontal = np.exp(-(dist_H_valid**2) / (2 * sigma_H**2))
+        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2)) # dist_V is scalar, sigma_V is array
+        
+        N_REFL = constants['N_REFL']
+        P = constants['P']
+        H = ZS 
+        
+        sum_refl = np.zeros_like(sigma_V)
+        for j in range(1, N_REFL + 1):
+            k1 = 2 * np.floor((j + 1) / 2) * P
+            num1 = (k1 + ((-1)**j * Z) - H)**2
+            exp1 = np.exp(-num1 / (2 * sigma_V**2))
+            
+            k2 = 2 * np.floor(j / 2) * P
+            num2 = (k2 + ((-1)**(j - 1) * Z) + H)**2
+            exp2 = np.exp(-num2 / (2 * sigma_V**2))
+            
+            sum_refl += (exp1 + exp2)
+
+        term_vertical_total = term_vertical_base + sum_refl
+        
+        # Assign back to result
+        result[valid_mask] = pre_factor * term_horizontal * term_vertical_total
+        
+        return result
 
 
 
@@ -166,7 +247,8 @@ class Model:
             y_obs = data_reshaped[i]
             
             # Update log likelihood
-            sq_residuals = (y_obs - mu)**2
+            # mu is (Nx, Nx), y_obs is (Nx*Nx,)
+            sq_residuals = (y_obs - mu.flatten())**2
             log_likelihood += -0.5 * np.sum(sq_residuals) / var
             
         return log_likelihood

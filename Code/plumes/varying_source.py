@@ -107,7 +107,8 @@ plt.close()
 
 #%%
 # Generate data  on grid
-data = model.gen_data(10,100,100,1,ak,bk,a0)
+# Generate data  on grid
+data = model.gen_data(10,Nt,Nx,1,ak,bk,a0)
 #Test log_prior
 coefficients = [a0,ak,bk]
 print(log_prior_coefficients(coefficients))
