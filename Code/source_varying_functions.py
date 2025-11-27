@@ -105,27 +105,8 @@ def A_matrix(x_sensor, y_sensor, constants):
         sigma_V = a_V * (dist_R * np.tan(gamma_V))**b_V + h
         
         rho_ch4 = constants['RHO_CH4']
-        pre_factor = (10**3 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V) # Fixed 0/rho to 1/rho or Q/rho? 
-        # Wait, the original code had (0 / rho_ch4). That results in 0 always?
-        # Checking original code: pre_factor = (0 / rho_ch4) / ...
-        # That looks like a bug or placeholder. 
-        # Standard Gaussian plume is Q / (2 pi U sigma_y sigma_z).
-        # If Q is part of s(t), then A matrix is just the dispersion part.
-        # But (0/rho) makes everything zero. 
-        # The user said "Even when I set the scalign facotr to 0 I dont notice any changes in the A mtrix".
-        # If A matrix is always 0, then indeed nothing changes.
-        # Let's assume the user wants the dispersion term.
-        # The term (0 / rho_ch4) is definitely suspicious. 
-        # I will change it to 1.0 for now as a unit source, assuming s(t) scales it.
-        # Actually, let's look at the previous code again.
-        # Line 92: pre_factor = (0 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
-        # This effectively makes A_matrix return 0. 
-        # I should probably fix this to 1.0 or Q if Q is constant, but s(t) implies varying source.
-        # So A(x) should be the transport coefficient.
-        # I will change 0 to 1.0.
+        pre_factor = (10**4 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V) 
         
-        pre_factor = (1.0) / (2 * np.pi * U_speed * sigma_H * sigma_V)
-
         term_horizontal = np.exp(-(dist_H**2) / (2 * sigma_H**2))
         term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
 
