@@ -10,11 +10,22 @@ def wind_function(t, wa0, wa, wb):
     return wind
 
 def s_function(t,ak,bk,a0):
-    n_coeff = ak.shape[0]
-    constant = a0
-    cosines = [cos(2*np.pi*(k+1)*t) for k in range(n_coeff)]
-    sines = [sin(2*np.pi*(k+1)*t) for k in range(n_coeff)]
-    return np.dot(ak,cosines) + np.dot(bk,sines) + a0
+    ak = np.array(ak)
+    bk = np.array(bk)
+    a0 = np.array(a0)
+    
+    if ak.ndim == 1:
+        n_coeff = ak.shape[0]
+        cosines = np.array([cos(2*np.pi*(k+1)*t) for k in range(n_coeff)])
+        sines = np.array([sin(2*np.pi*(k+1)*t) for k in range(n_coeff)])
+        return np.dot(ak,cosines) + np.dot(bk,sines) + a0
+    else:
+        # ak is (N_sources, n_coeff)
+        n_coeff = ak.shape[1]
+        cosines = np.array([cos(2*np.pi*(k+1)*t) for k in range(n_coeff)])
+        sines = np.array([sin(2*np.pi*(k+1)*t) for k in range(n_coeff)])
+        # np.dot(ak, cosines) -> (N_sources,)
+        return np.dot(ak, cosines) + np.dot(bk, sines) + a0
 
 # def A_matrix(x_1s,x_2s,x_1,x_2):
 #     return np.exp(-((x_1s-x_1)**2+(x_2s-x_2)**2))
@@ -189,13 +200,26 @@ class Model:
         else:
             A = A_matrix(x_1, x_2, self.physical_constants)
             
-        # A is (N_sources, ...). Sum contributions.
-        if A.ndim > np.ndim(x_1): # Check if we have extra dimension for sources
-             A_sum = np.sum(A, axis=0)
+        # A is (N_sources, ...). 
+        # st is scalar or (N_sources,)
+        
+        if np.ndim(self.s_function(t, ak, bk, a0)) > 0:
+             # st is vector (independent sources)
+             st = self.s_function(t, ak, bk, a0)
+             # Reshape st to broadcast against A
+             # A shape: (N_sources, ...)
+             st_reshaped = st.reshape((len(st),) + (1,) * (A.ndim - 1))
+             mu = np.sum(A * st_reshaped, axis=0) + self.beta
         else:
-             A_sum = A
+             # st is scalar (shared source function)
+             st = self.s_function(t, ak, bk, a0)
+             if A.ndim > np.ndim(x_1): # Check if we have extra dimension for sources
+                  A_sum = np.sum(A, axis=0)
+             else:
+                  A_sum = A
+             mu = A_sum * st + self.beta
              
-        return A_sum * self.s_function(t, ak, bk, a0) + self.beta + np.random.normal(0, self.sigma_epsilon)
+        return mu + np.random.normal(0, self.sigma_epsilon)
     # Generate data at Nt time steps
     def gen_data(self,T,Nt,Nx,Lx,ak,bk,a0):
         x_1 = np.linspace(-Lx, Lx, Nx)
@@ -241,13 +265,19 @@ class Model:
             else:
                 A = A_matrix(data['X1'], data['X2'], self.physical_constants)
             
-            # A is (N_sources, ...). Sum contributions.
-            if A.ndim > data['X1'].ndim:
-                A_sum = np.sum(A, axis=0)
+            # A is (N_sources, ...). 
+            # st is scalar or (N_sources,)
+            if np.ndim(st) > 0:
+                # st is vector
+                st_reshaped = st.reshape((len(st),) + (1,) * (A.ndim - 1))
+                mu = np.sum(A * st_reshaped, axis=0) + self.beta
             else:
-                A_sum = A
-                
-            mu = A_sum*st + self.beta
+                # st is scalar
+                if A.ndim > data['X1'].ndim:
+                    A_sum = np.sum(A, axis=0)
+                else:
+                    A_sum = A
+                mu = A_sum*st + self.beta
             
             # Get observed data for this time step
             y_obs = data_reshaped[i]
@@ -263,9 +293,28 @@ class Model:
 
 # Define log prior of source coefficients
 def log_prior_coefficients(coeff):
-    a0 = coeff[0]
-    ak = np.atleast_1d(coeff[1])
-    bk = np.atleast_1d(coeff[2])
-    n_coeff = len(ak)
-    variance_k = [1/(1+(k+1)**2) for k in range(n_coeff)]
-    return -1/2 * np.sum((ak)**2/variance_k) -1/2 * np.sum((bk)**2/variance_k) -1/2 * (a0)**2
+    a0 = np.array(coeff[0])
+    ak = np.array(coeff[1])
+    bk = np.array(coeff[2])
+    
+    # Flatten to handle both 1D and 2D cases
+    ak_flat = ak.flatten()
+    bk_flat = bk.flatten()
+    a0_flat = a0.flatten()
+    
+    # Variance depends on k index. 
+    # If 2D, ak is (N_sources, n_coeff). k corresponds to column index.
+    if ak.ndim == 2:
+        n_coeff = ak.shape[1]
+        variance_k = np.array([1/(1+(k+1)**2) for k in range(n_coeff)])
+        # Broadcast variance_k to (N_sources, n_coeff)
+        variance_matrix = np.tile(variance_k, (ak.shape[0], 1))
+        term_ak = np.sum(ak**2 / variance_matrix)
+        term_bk = np.sum(bk**2 / variance_matrix)
+    else:
+        n_coeff = len(ak)
+        variance_k = np.array([1/(1+(k+1)**2) for k in range(n_coeff)])
+        term_ak = np.sum(ak**2 / variance_k)
+        term_bk = np.sum(bk**2 / variance_k)
+        
+    return -0.5 * term_ak - 0.5 * term_bk - 0.5 * np.sum(a0**2)

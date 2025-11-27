@@ -13,9 +13,9 @@ from collections.abc import Iterable
 
 
 #Test s_function
-a0 =4
-ak = np.array([1])
-bk = np.array([1])
+a0 = np.array([4.0, 2.0])
+ak = np.array([[1.0], [0.5]])
+bk = np.array([[1.0], [-0.5]])
 t = 1
 
 print(s_function(t,ak,bk,a0))
@@ -124,11 +124,59 @@ print(f"Log likelihood: {ll}")
 
 
 
-def log_posterior(coeff):
-    return log_prior_coefficients(coeff) + model.log_likelihood_y(coeff,T,Nt,Nx,data)
-    
 #Run rwmh
-initial_point = [0,0,0]
+# 2 sources, 1 coeff each -> 2*1 + 2*1 + 2 = 6 parameters
+initial_point = np.zeros(6) 
+# Need to reshape inside log_posterior? 
+# No, log_likelihood_y expects [a0, ak, bk].
+# But rwmh passes a flat array.
+# We need a wrapper to reshape the flat array into [a0, ak, bk] structure expected by model.
+# Wait, model.log_likelihood_y expects `coeff` list: [a0, ak, bk].
+# If we pass flat array to rwmh, log_posterior receives flat array.
+# We need to restructure it.
+
+def log_posterior(flat_coeff):
+    # Reshape flat_coeff to [a0, ak, bk]
+    # Structure: a0 (2,), ak (2,1), bk (2,1)
+    # Total 6 params.
+    # Order in flat array: a0_0, a0_1, ak_0, ak_1, bk_0, bk_1?
+    # Or a0 (2), ak (2), bk (2).
+    n_sources = 2
+    n_coeff = 1
+    
+    a0_extracted = flat_coeff[:n_sources]
+    ak_extracted = flat_coeff[n_sources:n_sources + n_sources*n_coeff].reshape(n_sources, n_coeff)
+    bk_extracted = flat_coeff[n_sources + n_sources*n_coeff:].reshape(n_sources, n_coeff)
+    
+    coeff_list = [a0_extracted, ak_extracted, bk_extracted]
+    
+    return log_prior_coefficients(coeff_list) + model.log_likelihood_y(coeff_list,T,Nt,Nx,data)
+
 chain,acceptance_rate = rwmh(initial_point,0.01,10000,log_posterior)
 print(chain)
 print(acceptance_rate)
+
+# Plot chains
+plt.figure(figsize=(12, 12))
+labels = ['a0', 'ak', 'bk']
+# True values flattened in same order
+true_values_flat = np.concatenate([a0.flatten(), ak.flatten(), bk.flatten()])
+
+# Plot all 6 parameters
+for i in range(6):
+    plt.subplot(6, 1, i+1)
+    plt.plot(chain[:, i], label='Chain')
+    plt.axhline(true_values_flat[i], color='r', linestyle='--', label='True Value')
+    plt.ylabel(f'Param {i}')
+    plt.legend()
+
+plt.xlabel('Iteration')
+plt.suptitle(f'MCMC Chains (Acceptance Rate: {acceptance_rate:.2f})')
+plt.savefig('mcmc_chains.png')
+plt.close()
+
+# Print statistics
+burn_in = 5000
+print("Posterior Means (last 5000 samples):")
+print(f"Means: {np.mean(chain[burn_in:], axis=0)}")
+print(f"True: {true_values_flat}")
