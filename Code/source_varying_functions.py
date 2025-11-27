@@ -116,21 +116,21 @@ class Model:
         self.s_function = s_function
         self.A_matrix = A_matrix(self.x_1s,self.x_2s,physical_constants)
     # Observation at (x_1,x_2) at time t
-    def y(self,x_1,x_2,t):
+    def y(self,x_1,x_2,t,ak,bk,a0):
         return self.A_matrix*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
     # Generate data at Nt time steps
-    def gen_data(self,T,Nt,Nx):
-        x_1 = np.linspace(-1, 1, Nx)
-        x_2 = np.linspace(-1, 1, Nx)
+    def gen_data(self,T,Nt,Nx,Lx,ak,bk,a0):
+        x_1 = np.linspace(-Lx, Lx, Nx)
+        x_2 = np.linspace(-Lx, Lx, Nx)
         X_1, X_2 = np.meshgrid(x_1, x_2)
         Y = np.array([])
         for t in np.linspace(0,T,Nt):
-            Yt = np.array([self.y(x_1, x_2, t) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
+            Yt = np.array([self.y(x_1, x_2, t,ak,bk,a0) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
             Y = np.append(Y,Yt)
-        return Y
+        return {'X1': X_1, 'X2': X_2, 'Y': Y}
         
-    # Caluclates log_likelihood of data given
-    def log_likelihood_y(coeff, T, Nt, Nx, data, model):
+    # Calculates log_likelihood of data given
+    def log_likelihood_y(self,coeff, T, Nt, Nx, data):
         # Unpack coefficients
         a0 = coeff[0]
         ak = np.atleast_1d(coeff[1])
@@ -138,16 +138,10 @@ class Model:
         
         # Create grids
         times = np.linspace(0, T, Nt)
-        x_1 = np.linspace(-1, 1, Nx)
-        x_2 = np.linspace(-1, 1, Nx)
-        X_1, X_2 = np.meshgrid(x_1, x_2)
-        
-        # Flatten spatial coordinates
-        X1_flat = X_1.flatten()
-        X2_flat = X_2.flatten()
+
         
         # Reshape data to (nt, nx*nx)
-        data_reshaped = data.reshape(Nt, -1)
+        data_reshaped = data['Y'].reshape(Nt, -1)
         
         log_likelihood = 0
         var = self.sigma_epsilon**2

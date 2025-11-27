@@ -2,7 +2,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from source_varying_functions import s_function, A_matrix, rwmh, log_likelihood_y
+from source_varying_functions import s_function, A_matrix, rwmh, Model, log_prior_coefficients
 import numpy as np
 import matplotlib.pyplot as plt
 from math import cos, sin
@@ -22,7 +22,10 @@ print(s_function(t,ak,bk,a0))
 t = np.linspace(0,0.5,100)
 plt.plot(t,list(map(lambda t: s_function(t,ak,bk,a0),t)))
 plt.show()
-
+T=10
+Nt=100
+Nx=100
+Lx=1
 # Constants
 physical_constants = {
     'RHO_CH4': 0.656, # kg/m^3, density of methane at 25 deg C and 1 atm
@@ -43,21 +46,9 @@ sigma_epsilon = 0.01
 # Define model class y(t,x)=A(x)s(t)+beta+epsilon
 
 
-#Tests the model
-x_1s =50
-x_2s =50
-model = Model(x_1s,x_2s,beta,sigma_epsilon,s_function,physical_constants)
-t=0.5
-x_1 = 1
-x_2 = 1
-y = model.y(x_1,x_2,t)
-print(y)
 #Plots over spatial grid for fixed time t
-x_1 = np.linspace(-1,1,100)
-x_2 = np.linspace(-1,1,100)
-X_1,X_2 = np.meshgrid(x_1,x_2)
-Y = np.array([model.y(x_1,x_2,t) for x_1,x_2 in zip(X_1.flatten(),X_2.flatten())]).reshape(X_1.shape)
-plt.contourf(X_1,X_2,Y)
+data = model.gen_data(T,Nt,Nx,Lx,ak,bk,a0)
+plt.contourf(data['X1'],data['X2'],data['Y'])
 plt.colorbar()
 plt.show()
 # Now varies time in plot too
@@ -65,22 +56,18 @@ import matplotlib.animation as animation
 
 # Set up the figure and axis
 fig, ax = plt.subplots()
-x_1 = np.linspace(-1, 1, 100)
-x_2 = np.linspace(-1, 1, 100)
-X_1, X_2 = np.meshgrid(x_1, x_2)
 
 # Initial plot
-t_start = 0
-Y = np.array([model.y(x_1, x_2, t_start) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
-contour = ax.contourf(X_1, X_2, Y, levels=20, cmap='viridis')
+data = model.gen_data(T,Nt,Nx,Lx,ak,bk,a0)
+contour = ax.contourf(data['X1'], data['X2'], data['Y'], levels=20, cmap='viridis')
 cbar = fig.colorbar(contour)
 ax.set_title(f'Observation Model at t={t_start:.2f}')
 
 def update(frame):
     ax.clear()
     t = frame * 0.01  # Time step
-    Y = np.array([model.y(x_1, x_2, t) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
-    contour = ax.contourf(X_1, X_2, Y, levels=20, cmap='viridis')
+    data = model.gen_data(T,Nt,Nx,Lx,ak,bk,a0)
+    contour = ax.contourf(data['X1'], data['X2'], data['Y'], levels=20, cmap='viridis')
     ax.set_title(f'Observation Model at t={t:.2f}')
     return contour,
 
@@ -103,7 +90,7 @@ except Exception as e:
 
 #%%
 # Generate data  on grid
-data = model.gen_data(10,100,100)
+data = model.gen_data(10,100,100,1,ak,bk,a0)
 #Test log_prior
 coefficients = [a0,ak,bk]
 print(log_prior_coefficients(coefficients))
@@ -111,13 +98,13 @@ print(log_prior_coefficients(coefficients))
 # %%
 
 # Test log_likelihood_y
-ll = log_likelihood_y(coefficients, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix)
+ll = model.log_likelihood_y(coefficients,T,Nt,Nx,data)
 print(f"Log likelihood: {ll}")
 
 
 
 def log_posterior(coeff):
-    return log_prior_coefficients(coeff) + log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix)
+    return log_prior_coefficients(coeff) + model.log_likelihood_y(coeff,T,Nt,Nx,data)
     
 #Run rwmh
 initial_point = [0,0,0]
