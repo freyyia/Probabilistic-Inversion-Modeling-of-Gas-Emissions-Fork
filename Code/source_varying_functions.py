@@ -52,54 +52,9 @@ def rwmh(start_point, proposal_variance, n_steps, log_posterior):
     return np.array(chain), acceptance_rate
 
 
-def log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix):
-    # Unpack coefficients
-    a0 = coeff[0]
-    ak = np.atleast_1d(coeff[1])
-    bk = np.atleast_1d(coeff[2])
-    
-    # Grid parameters
-    T = 10
-    nt = 100
-    nx = 100
-    
-    # Create grids
-    times = np.linspace(0, T, nt)
-    x_1 = np.linspace(-1, 1, nx)
-    x_2 = np.linspace(-1, 1, nx)
-    X_1, X_2 = np.meshgrid(x_1, x_2)
-    
-    # Flatten spatial coordinates
-    X1_flat = X_1.flatten()
-    X2_flat = X_2.flatten()
-    
-    # Calculate A matrix (spatial component)
-    A = A_matrix(x_1s, x_2s, X1_flat, X2_flat)
-    
-    # Reshape data to (nt, nx*nx)
-    data_reshaped = data.reshape(nt, -1)
-    
-    log_likelihood = 0
-    var = sigma_epsilon**2
-    
-    # Iterate over time steps
-    for i, t in enumerate(times):
-        # Calculate source function value at time t
-        st = s_function(t, ak, bk, a0)
-        
-        # Calculate expected value mu(x, t)
-        mu = A * st + beta
-        
-        # Get observed data for this time step
-        y_obs = data_reshaped[i]
-        
-        # Update log likelihood
-        sq_residuals = (y_obs - mu)**2
-        log_likelihood += -0.5 * np.sum(sq_residuals) / var
-        
-    return log_likelihood
 
-def A_matrix(x, y, constants):
+
+def A_matrix(x1, x2, constants):
     """
     Calculates the coupling matrix A using the Gaussian plume formula.
     
@@ -122,9 +77,9 @@ def A_matrix(x, y, constants):
     XS = constants['XS'] #Source x-coordinate
     YS = constants['YS'] #Source y-coordinate
     ZS = constants['ZS'] #Source height
-    Z = constants['H'] #Sensor height
+    Z = constants['Z'] #Sensor height
     
-    vec = (x-xs,y-ys)
+    vec = (x1-XS,x2-YS)
     wind_vec_perp = np.array([wind_vector[1],-wind_vector[0]])
     wind_perp_normalized = wind_vec_perp / np.linalg.norm(wind_vec_perp)
     
@@ -137,11 +92,11 @@ def A_matrix(x, y, constants):
     sum_refl = 0
     for j in range(1, N_REFL + 1):
         # First reflection term
-        num1 = (2 * np.floor((j + 1) / 2) * P + (-1)**j * (delta_V + H) - H)**2
+        num1 = (2 * np.floor((j + 1) / 2) * P + (-1)**j * (delta_V + Z) - Z)**2
         exp1 = np.exp(-0.5 * num1 / SIGMA_V**2)
         
         # Second reflection term
-        num2 = (2 * np.floor(j / 2) * P + (-1)**(j - 1) * (delta_V + H) + H)**2
+        num2 = (2 * np.floor(j / 2) * P + (-1)**(j - 1) * (delta_V + Z) + Z)**2
         exp2 = np.exp(-0.5 * num2 / SIGMA_V**2)
         
         sum_refl += exp1 + exp2
@@ -149,3 +104,78 @@ def A_matrix(x, y, constants):
     term2 = expV + sum_refl
     
     return term1 * term2
+
+
+
+class Model:
+    def __init__(self,x_1s,x_2s,beta,sigma_epsilon,s_function, physical_constants):
+        self.x_1s = x_1s
+        self.x_2s = x_2s
+        self.beta = beta
+        self.sigma_epsilon = sigma_epsilon
+        self.s_function = s_function
+        self.A_matrix = A_matrix(self.x_1s,self.x_2s,physical_constants)
+    # Observation at (x_1,x_2) at time t
+    def y(self,x_1,x_2,t):
+        return self.A_matrix*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
+    # Generate data at Nt time steps
+    def gen_data(self,T,Nt,Nx):
+        x_1 = np.linspace(-1, 1, Nx)
+        x_2 = np.linspace(-1, 1, Nx)
+        X_1, X_2 = np.meshgrid(x_1, x_2)
+        Y = np.array([])
+        for t in np.linspace(0,T,Nt):
+            Yt = np.array([self.y(x_1, x_2, t) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
+            Y = np.append(Y,Yt)
+        return Y
+        
+    # Caluclates log_likelihood of data given
+    def log_likelihood_y(coeff, T, Nt, Nx, data, model):
+        # Unpack coefficients
+        a0 = coeff[0]
+        ak = np.atleast_1d(coeff[1])
+        bk = np.atleast_1d(coeff[2])
+        
+        # Create grids
+        times = np.linspace(0, T, Nt)
+        x_1 = np.linspace(-1, 1, Nx)
+        x_2 = np.linspace(-1, 1, Nx)
+        X_1, X_2 = np.meshgrid(x_1, x_2)
+        
+        # Flatten spatial coordinates
+        X1_flat = X_1.flatten()
+        X2_flat = X_2.flatten()
+        
+        # Reshape data to (nt, nx*nx)
+        data_reshaped = data.reshape(Nt, -1)
+        
+        log_likelihood = 0
+        var = self.sigma_epsilon**2
+        
+        # Iterate over time steps
+        for i, t in enumerate(times):
+            # Calculate source function value at time t
+            st = self.s_function(t, ak, bk, a0)
+            
+            # Calculate expected value mu(x, t)
+            mu = self.A_matrix * st + self.beta
+            
+            # Get observed data for this time step
+            y_obs = data_reshaped[i]
+            
+            # Update log likelihood
+            sq_residuals = (y_obs - mu)**2
+            log_likelihood += -0.5 * np.sum(sq_residuals) / var
+            
+        return log_likelihood
+
+
+
+# Define log prior of source coefficients
+def log_prior_coefficients(coeff):
+    a0 = coeff[0]
+    ak = np.atleast_1d(coeff[1])
+    bk = np.atleast_1d(coeff[2])
+    n_coeff = len(ak)
+    variance_k = [1/(1+(k+1)**2) for k in range(n_coeff)]
+    return -1/2 * np.sum((ak)**2/variance_k) -1/2 * np.sum((bk)**2/variance_k) -1/2 * (a0)**2
