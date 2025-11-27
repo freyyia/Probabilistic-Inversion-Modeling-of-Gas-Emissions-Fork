@@ -114,6 +114,7 @@ def A_matrix(x, y, constants):
     #Extract constants
     RHO_CH4 = constants['RHO_CH4']
     U = constants['U']
+    wind_vector = constants['wind_vector']
     SIGMA_H = constants['SIGMA_H']
     SIGMA_V = constants['SIGMA_V']
     N_REFL = constants['N_REFL']
@@ -121,9 +122,17 @@ def A_matrix(x, y, constants):
     XS = constants['XS'] #Source x-coordinate
     YS = constants['YS'] #Source y-coordinate
     ZS = constants['ZS'] #Source height
-    H = constants['H'] #Sensor height
+    Z = constants['H'] #Sensor height
     
+    vec = (x-xs,y-ys)
+    wind_vec_perp = np.array([wind_vector[1],-wind_vector[0]])
+    wind_perp_normalized = wind_vec_perp / np.linalg.norm(wind_vec_perp)
+    
+    delta_V = np.dot(vec,wind_perp_normalized)
+    delta_H = Z-ZS
+
     term1 = (10**6 / RHO_CH4) * (1 / (2 * np.pi * U * SIGMA_H * SIGMA_V)) * np.exp(-delta_H**2 / (2 * SIGMA_H**2))
+    expV =np.exp(-delta_V**2 / (2 * SIGMA_V**2))
     
     sum_refl = 0
     for j in range(1, N_REFL + 1):
@@ -137,6 +146,6 @@ def A_matrix(x, y, constants):
         
         sum_refl += exp1 + exp2
         
-    term2 = np.exp(-delta_V**2 / (2 * SIGMA_V**2)) + sum_refl
+    term2 = expV + sum_refl
     
     return term1 * term2
