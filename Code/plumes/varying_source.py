@@ -27,7 +27,7 @@ plt.savefig('source_function_plot.png')
 plt.close()
 T=10
 Nt=10
-Nx=50
+Nx=20
 Lx=5
 # Constants, now implmenting wind as Fourier sum
 physical_constants = {
@@ -38,8 +38,8 @@ physical_constants = {
     'SIGMA_V': 10.0,  # m, vertical dispersion coefficient
     'N_REFL': 5,      # number of reflections
     'P': 1000.0,      # m, PBL height
-    'XS': [0.0, 2.0],       # m, source x-coordinate (multiple sources)
-    'YS': [0.0, -2.0],       # m, source y-coordinate (multiple sources)
+    'XS': [2.0, 2.0],       # m, source x-coordinate (multiple sources)
+    'YS': [-2.0, -2.0],       # m, source y-coordinate (multiple sources)
     'ZS': 0,       # m, source height
     'Z': 0,         # m, sensor height
     'a_H': 1,
@@ -125,53 +125,76 @@ print(f"Log likelihood: {ll}")
 
 
 #Run rwmh
-# 2 sources, 1 coeff each -> 2*1 + 2*1 + 2 = 6 parameters
-initial_point = np.zeros(6) 
-# Need to reshape inside log_posterior? 
-# No, log_likelihood_y expects [a0, ak, bk].
-# But rwmh passes a flat array.
-# We need a wrapper to reshape the flat array into [a0, ak, bk] structure expected by model.
-# Wait, model.log_likelihood_y expects `coeff` list: [a0, ak, bk].
-# If we pass flat array to rwmh, log_posterior receives flat array.
-# We need to restructure it.
+# 2 sources, 1 coeff each -> 2*1 + 2*1 + 2 = 6 parameters for source function
+# Plus 2 sources * 2 coords (x,y) = 4 parameters for location
+# Total 10 parameters
+n_sources = 2
+n_coeff = 1
+n_params = n_sources + n_sources*n_coeff + n_sources*n_coeff + n_sources + n_sources
+
+initial_point = np.zeros(n_params) 
 
 def log_posterior(flat_coeff):
-    # Reshape flat_coeff to [a0, ak, bk]
-    # Structure: a0 (2,), ak (2,1), bk (2,1)
-    # Total 6 params.
-    # Order in flat array: a0_0, a0_1, ak_0, ak_1, bk_0, bk_1?
-    # Or a0 (2), ak (2), bk (2).
-    n_sources = 2
-    n_coeff = 1
+    # Reshape flat_coeff to [a0, ak, bk, XS, YS]
+    # Structure: a0 (2,), ak (2,1), bk (2,1), XS (2,), YS (2,)
     
-    a0_extracted = flat_coeff[:n_sources]
-    ak_extracted = flat_coeff[n_sources:n_sources + n_sources*n_coeff].reshape(n_sources, n_coeff)
-    bk_extracted = flat_coeff[n_sources + n_sources*n_coeff:].reshape(n_sources, n_coeff)
+    # Indices
+    idx_a0 = n_sources
+    idx_ak = idx_a0 + n_sources * n_coeff
+    idx_bk = idx_ak + n_sources * n_coeff
+    idx_XS = idx_bk + n_sources
+    
+    a0_extracted = flat_coeff[:idx_a0]
+    ak_extracted = flat_coeff[idx_a0:idx_ak].reshape(n_sources, n_coeff)
+    bk_extracted = flat_coeff[idx_ak:idx_bk].reshape(n_sources, n_coeff)
+    XS_extracted = flat_coeff[idx_bk:idx_XS]
+    YS_extracted = flat_coeff[idx_XS:]
     
     coeff_list = [a0_extracted, ak_extracted, bk_extracted]
     
-    return log_prior_coefficients(coeff_list) + model.log_likelihood_y(coeff_list,T,Nt,Nx,data)
+    # Uniform prior for locations
+    # Domain is [-Lx, Lx]
+    if np.any(np.abs(XS_extracted) > Lx) or np.any(np.abs(YS_extracted) > Lx):
+        return -np.inf
+    
+    # Log prior for coefficients (Gaussian)
+    lp_coeff = log_prior_coefficients(coeff_list)
+    
+    # Log likelihood
+    ll = model.log_likelihood_y(coeff_list, T, Nt, Nx, data, source_locations=(XS_extracted, YS_extracted))
+    
+    return lp_coeff + ll
 
 chain,acceptance_rate = rwmh(initial_point,0.01,10000,log_posterior)
 print(chain)
 print(acceptance_rate)
 
 # Plot chains
-plt.figure(figsize=(12, 12))
-labels = ['a0', 'ak', 'bk']
+plt.figure(figsize=(12, 20))
+labels = ['a0', 'ak', 'bk', 'XS', 'YS']
 # True values flattened in same order
-true_values_flat = np.concatenate([a0.flatten(), ak.flatten(), bk.flatten()])
+true_XS = np.array(physical_constants['XS'])
+true_YS = np.array(physical_constants['YS'])
+true_values_flat = np.concatenate([a0.flatten(), ak.flatten(), bk.flatten(), true_XS.flatten(), true_YS.flatten()])
 
-# Plot all 6 parameters
-for i in range(6):
-    plt.subplot(6, 1, i+1)
+# Plot all parameters
+param_names = []
+for i in range(n_sources): param_names.append(f'a0_{i}')
+for i in range(n_sources*n_coeff): param_names.append(f'ak_{i}')
+for i in range(n_sources*n_coeff): param_names.append(f'bk_{i}')
+for i in range(n_sources): param_names.append(f'XS_{i}')
+for i in range(n_sources): param_names.append(f'YS_{i}')
+
+for i in range(n_params):
+    plt.subplot(n_params, 1, i+1)
     plt.plot(chain[:, i], label='Chain')
     plt.axhline(true_values_flat[i], color='r', linestyle='--', label='True Value')
-    plt.ylabel(f'Param {i}')
+    plt.ylabel(param_names[i])
     plt.legend()
 
 plt.xlabel('Iteration')
 plt.suptitle(f'MCMC Chains (Acceptance Rate: {acceptance_rate:.2f})')
+plt.tight_layout()
 plt.savefig('mcmc_chains.png')
 plt.close()
 
@@ -180,3 +203,51 @@ burn_in = 5000
 print("Posterior Means (last 5000 samples):")
 print(f"Means: {np.mean(chain[burn_in:], axis=0)}")
 print(f"True: {true_values_flat}")
+print('Diff: ', np.mean(chain[burn_in:], axis=0) - true_values_flat)
+
+#Plot gif with posterior mean as parameters to check whether data looks similar
+posterior_mean = np.mean(chain[burn_in:], axis=0)
+
+# Extract parameters from posterior mean
+idx_a0 = n_sources
+idx_ak = idx_a0 + n_sources * n_coeff
+idx_bk = idx_ak + n_sources * n_coeff
+idx_XS = idx_bk + n_sources
+
+pm_a0 = posterior_mean[:idx_a0]
+pm_ak = posterior_mean[idx_a0:idx_ak].reshape(n_sources, n_coeff)
+pm_bk = posterior_mean[idx_ak:idx_bk].reshape(n_sources, n_coeff)
+pm_XS = posterior_mean[idx_bk:idx_XS]
+pm_YS = posterior_mean[idx_XS:]
+
+# Update model constants with posterior mean locations
+pm_constants = physical_constants.copy()
+pm_constants['XS'] = pm_XS
+pm_constants['YS'] = pm_YS
+model_pm = Model(beta, sigma_epsilon, s_function, pm_constants)
+
+# Generate data
+data_pm = model_pm.gen_data(T, Nt, Nx, Lx, pm_ak, pm_bk, pm_a0)
+
+# Create animation
+fig, ax = plt.subplots()
+contour = ax.contourf(data_pm['X1'], data_pm['X2'], data_pm['Y'][0], levels=20, cmap='viridis')
+cbar = fig.colorbar(contour)
+ax.set_title(f'Posterior Mean Model at t={t_start:.2f}')
+
+def update_pm(frame):
+    ax.clear()
+    t = frame * T / (Nt - 1)
+    contour = ax.contourf(data_pm['X1'], data_pm['X2'], data_pm['Y'][frame], levels=20, cmap='viridis')
+    ax.set_title(f'Posterior Mean Model at t={t:.2f}')
+    return contour,
+
+ani_pm = animation.FuncAnimation(fig, update_pm, frames=Nt, interval=200)
+
+try:
+    ani_pm.save('posterior_mean_animation.gif', writer='pillow')
+    print("Animation saved as posterior_mean_animation.gif")
+except Exception as e:
+    print(f"Could not save animation: {e}")
+    plt.savefig('posterior_mean_plot.png')
+plt.close()

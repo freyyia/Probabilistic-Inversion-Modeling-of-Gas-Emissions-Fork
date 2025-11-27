@@ -233,7 +233,7 @@ class Model:
         return {'X1': X_1, 'X2': X_2, 'Y': Y}
         
     # Calculates log_likelihood of data given
-    def log_likelihood_y(self,coeff, T, Nt, Nx, data):
+    def log_likelihood_y(self, coeff, T, Nt, Nx, data, source_locations=None):
         # Unpack coefficients
         a0 = coeff[0]
         ak = np.atleast_1d(coeff[1])
@@ -249,21 +249,26 @@ class Model:
         log_likelihood = 0
         var = self.sigma_epsilon**2
         
+        # Use provided source locations or defaults
+        current_constants = self.physical_constants.copy()
+        if source_locations is not None:
+            current_constants['XS'] = source_locations[0]
+            current_constants['YS'] = source_locations[1]
+        
         # Iterate over time steps
         for i, t in enumerate(times):
             # Calculate source function value at time t
             st = self.s_function(t, ak, bk, a0)
             
             # Calculate expected value mu(x, t)
-            # Calculate expected value mu(x, t)
-            wa0 = self.physical_constants.get('wa0')
-            wa = self.physical_constants.get('wa')
-            wb = self.physical_constants.get('wb')
+            wa0 = current_constants.get('wa0')
+            wa = current_constants.get('wa')
+            wb = current_constants.get('wb')
             if wa0 is not None and wa is not None and wb is not None:
                 current_wind = wind_function(t, wa0, wa, wb)
-                A = A_matrix(data['X1'], data['X2'], self.physical_constants, wind_vector=current_wind)
+                A = A_matrix(data['X1'], data['X2'], current_constants, wind_vector=current_wind)
             else:
-                A = A_matrix(data['X1'], data['X2'], self.physical_constants)
+                A = A_matrix(data['X1'], data['X2'], current_constants)
             
             # A is (N_sources, ...). 
             # st is scalar or (N_sources,)
