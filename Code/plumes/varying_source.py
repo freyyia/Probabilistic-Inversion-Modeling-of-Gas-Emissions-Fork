@@ -27,7 +27,7 @@ plt.savefig('source_function_plot.png')
 plt.close()
 T=10
 Nt=10
-Nx=100
+Nx=20
 Lx=5
 # Constants
 physical_constants = {
@@ -108,7 +108,7 @@ plt.close()
 #%%
 # Generate data  on grid
 # Generate data  on grid
-data = model.gen_data(10,Nt,Nx,1,ak,bk,a0)
+data = model.gen_data(10,Nt,20,5,ak,bk,a0)
 #Test log_prior
 coefficients = [a0,ak,bk]
 print(log_prior_coefficients(coefficients))
@@ -116,16 +116,16 @@ print(log_prior_coefficients(coefficients))
 # %%
 
 # Test log_likelihood_y
-ll = model.log_likelihood_y(coefficients,T,Nt,Nx,data)
+ll = model.log_likelihood_y(coefficients,T,Nt,20,data)
 print(f"Log likelihood: {ll}")
 
 
 
 def log_posterior(coeff):
-    return log_prior_coefficients(coeff) + model.log_likelihood_y(coeff,T,Nt,Nx,data)
+    return log_prior_coefficients(coeff) + model.log_likelihood_y(coeff,T,Nt,20,data)
     
 #Run rwmh
 initial_point = [0,0,0]
-chain,acceptance_rate = rwmh(initial_point,1,10000,log_posterior)
+chain,acceptance_rate = rwmh(initial_point,0.01,10000,log_posterior)
 print(chain)
 print(acceptance_rate)

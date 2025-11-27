@@ -68,20 +68,18 @@ def A_matrix(x_sensor, y_sensor, constants):
     U_speed = constants['U']
     
     # 2. Coordinate Rotation
-    dx = x_sensor - XS
-    dy = y_sensor - YS
-    # vec_source_to_sensor = np.array([dx, dy]) # This creates shape (2, Nx, Nx) if inputs are grids
+    # Ensure inputs are arrays for uniform processing
+    x_in = np.atleast_1d(x_sensor)
+    y_in = np.atleast_1d(y_sensor)
+    
+    dx = x_in - XS
+    dy = y_in - YS
     
     wind_vec_perp = np.array([-u_vec[1], u_vec[0]]) 
     
     # Project to get Downwind (dist_R) and Crosswind (dist_H) distances
-    # Manual dot product to handle broadcasting correctly
-    # dist_R = dx * u_x + dy * u_y
     dist_R = dx * u_vec[0] + dy * u_vec[1]
-    
-    # dist_H = dx * perp_x + dy * perp_y
     dist_H = dx * wind_vec_perp[0] + dy * wind_vec_perp[1]
-    
     dist_V = Z - ZS 
 
     a_H, b_H = constants['a_H'], constants['b_H']
@@ -93,64 +91,22 @@ def A_matrix(x_sensor, y_sensor, constants):
     # Mask for downwind distances
     valid_mask = dist_R > 0.1
     
-    # Initialize result array (or scalar) with zeros
-    if np.isscalar(dist_R):
-        if not valid_mask:
-            return 0.0
-        # If scalar and valid, we proceed. 
-        # To keep logic unified, we can just compute and return.
-        sigma_H = a_H * (dist_R * np.tan(gamma_H))**b_H + w
-        sigma_V = a_V * (dist_R * np.tan(gamma_V))**b_V + h
-        
-        rho_ch4 = constants['RHO_CH4']
-        pre_factor = (1 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V) 
-        
-        term_horizontal = np.exp(-(dist_H**2) / (2 * sigma_H**2))
-        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
-
-        N_REFL = constants['N_REFL']
-        P = constants['P']
-        H = ZS 
-        
-        sum_refl = 0
-        for j in range(1, N_REFL + 1):
-            k1 = 2 * np.floor((j + 1) / 2) * P
-            num1 = (k1 + ((-1)**j * Z) - H)**2
-            exp1 = np.exp(-num1 / (2 * sigma_V**2))
-            
-            k2 = 2 * np.floor(j / 2) * P
-            num2 = (k2 + ((-1)**(j - 1) * Z) + H)**2
-            exp2 = np.exp(-num2 / (2 * sigma_V**2))
-            
-            sum_refl += (exp1 + exp2)
-
-        term_vertical_total = term_vertical_base + sum_refl
-        
-        return pre_factor * term_horizontal * term_vertical_total
-
-    else:
-        # Array case
-        result = np.zeros_like(dist_R)
-        
-        # Only compute for valid points to avoid warnings/errors
-        # We can use boolean indexing
-        
-        # Extract valid elements
-        dist_R_valid = dist_R[valid_mask]
-        dist_H_valid = dist_H[valid_mask]
-        
-        if dist_R_valid.size == 0:
-            return result
-            
+    # Initialize result array
+    result = np.zeros_like(dist_R)
+    
+    # Extract valid elements
+    dist_R_valid = dist_R[valid_mask]
+    dist_H_valid = dist_H[valid_mask]
+    
+    if dist_R_valid.size > 0:
         sigma_H = a_H * (dist_R_valid * np.tan(gamma_H))**b_H + w
         sigma_V = a_V * (dist_R_valid * np.tan(gamma_V))**b_V + h
         
-        # pre_factor = (1.0) / (2 * np.pi * U_speed * sigma_H * sigma_V)
         rho_ch4 = constants['RHO_CH4']
-        pre_factor = (1 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
+        pre_factor = (10 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
         
         term_horizontal = np.exp(-(dist_H_valid**2) / (2 * sigma_H**2))
-        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2)) # dist_V is scalar, sigma_V is array
+        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2)) 
         
         N_REFL = constants['N_REFL']
         P = constants['P']
@@ -172,8 +128,12 @@ def A_matrix(x_sensor, y_sensor, constants):
         
         # Assign back to result
         result[valid_mask] = pre_factor * term_horizontal * term_vertical_total
-        
-        return result
+    
+    # Return scalar if input was scalar
+    if np.isscalar(x_sensor) and np.isscalar(y_sensor):
+        return result[0]
+    else:
+        return result.reshape(np.shape(x_sensor))
 
 
 
