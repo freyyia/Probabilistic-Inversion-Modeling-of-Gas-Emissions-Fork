@@ -21,7 +21,9 @@ print(s_function(t,ak,bk,a0))
 #Plots source function over [0,2pi]
 t = np.linspace(0,0.5,100)
 plt.plot(t,list(map(lambda t: s_function(t,ak,bk,a0),t)))
-plt.show()
+# plt.show() replaced with savefig to avoid webview error
+plt.savefig('source_function_plot.png')
+plt.close()
 T=10
 Nt=100
 Nx=100
@@ -60,7 +62,9 @@ t_start = 0
 data = model.gen_data(T,Nt,Nx,Lx,ak,bk,a0)
 plt.contourf(data['X1'],data['X2'],data['Y'][0])
 plt.colorbar()
-plt.show()
+# plt.show() replaced with savefig to avoid webview error
+plt.savefig('source_function_plot.png')
+plt.close()
 # Now varies time in plot too
 import matplotlib.animation as animation
 
@@ -90,7 +94,9 @@ try:
     print("Animation saved as observation_Model_animation.gif")
 except Exception as e:
     print(f"Could not save animation: {e}")
-    plt.show()
+    # plt.show() replaced with savefig to avoid webview error
+plt.savefig('source_function_plot.png')
+plt.close()
 
 
 

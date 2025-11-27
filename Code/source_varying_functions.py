@@ -54,67 +54,66 @@ def rwmh(start_point, proposal_variance, n_steps, log_posterior):
 
 
 
-def A_matrix(x1, x2, constants):
+
+def A_matrix(x_sensor, y_sensor, constants):
     """
-    Calculates the coupling matrix A using the Gaussian plume formula.
+    Calculates the concentration using the Gaussian plume formula with reflections.
+    """
+    # 1. Extract Geometry & Wind
+    XS, YS, ZS = constants['XS'], constants['YS'], constants['ZS'] # Source
+    Z = constants['Z']  # Sensor Height
+    u_vec = np.array(constants['wind_vector'])
+    u_vec = u_vec / np.linalg.norm(u_vec) # Ensure unit vector
+    U_speed = constants['U']
     
-    Args:
-        x: Sensor x-coordinate
-        y: Sensor y-coordinate
-        constants: Constants dictionary
-        
-    Returns:
-        Concentration per unit source rate.
-    """
-    #Extract constants
-    RHO_CH4 = constants['RHO_CH4']
-    U = constants['U']
-    wind_vector = constants['wind_vector']
-    SIGMA_H = constants['SIGMA_H']
-    SIGMA_V = constants['SIGMA_V']
-    N_REFL = constants['N_REFL']
-    P = constants['P']
-    XS = constants['XS'] #Source x-coordinate
-    YS = constants['YS'] #Source y-coordinate
-    ZS = constants['ZS'] #Source height
-    Z = constants['Z'] #Sensor height
-    a_H = constants['a_H']
-    b_H = constants['b_H']
-    w = constants['w']
-    a_V = constants['a_V']
-    b_V = constants['b_V']
-    h = constants['h']
+    # 2. Coordinate Rotation
+    dx = x_sensor - XS
+    dy = y_sensor - YS
+    vec_source_to_sensor = np.array([dx, dy])
+    wind_vec_perp = np.array([-u_vec[1], u_vec[0]]) 
+    
+    # Project to get Downwind (dist_R) and Crosswind (dist_H) distances
+    dist_R = np.dot(vec_source_to_sensor, u_vec)
+    dist_H = np.dot(vec_source_to_sensor, wind_vec_perp)
+    dist_V = Z - ZS 
+    
+    if dist_R <= 0.1: # Small epsilon to prevent division by zero or negative log
+        return 0.0
+
+    a_H, b_H = constants['a_H'], constants['b_H']
+    a_V, b_V = constants['a_V'], constants['b_V']
+    w, h = constants['w'], constants['h']
     gamma_H = constants['gamma_H']
     gamma_V = constants['gamma_V']
-    
-    vec = (x1-XS,x2-YS)
-    wind_vec_perp = np.array([wind_vector[1],-wind_vector[0]])
-    wind_perp_normalized = wind_vec_perp / np.linalg.norm(wind_vec_perp)
-    
-    delta_V = np.dot(vec,wind_perp_normalized)
-    delta_R=np.dot(vec,wind_vector)
-    sigma_H = a_H*(delta_R*tan(gamma_H))**b_H+w 
-    sigma_V = a_V*(delta_R*tan(gamma_V))**b_V+h
-    delta_H = Z-ZS
 
-    term1 = (10**6 / RHO_CH4) * (1 / (2 * np.pi * U * SIGMA_H * SIGMA_V)) * np.exp(-delta_H**2 / (2 * SIGMA_H**2))
-    expV =np.exp(-delta_V**2 / (2 * SIGMA_V**2))
+    sigma_H = a_H * (dist_R * np.tan(gamma_H))**b_H + w
+    sigma_V = a_V * (dist_R * np.tan(gamma_V))**b_V + h
+
+    rho_ch4 = constants['RHO_CH4']
+    pre_factor = (10**6 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
+    
+    term_horizontal = np.exp(-(dist_H**2) / (2 * sigma_H**2))
+    term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
+
+    N_REFL = constants['N_REFL']
+    P = constants['P']
+    H = ZS 
     
     sum_refl = 0
     for j in range(1, N_REFL + 1):
-        # First reflection term
-        num1 = (2 * np.floor((j + 1) / 2) * P + (-1)**j * (delta_V + Z) - Z)**2
-        exp1 = np.exp(-0.5 * num1 / SIGMA_V**2)
+        k1 = 2 * np.floor((j + 1) / 2) * P
+        num1 = (k1 + ((-1)**j * Z) - H)**2
+        exp1 = np.exp(-num1 / (2 * sigma_V**2))
         
-        # Second reflection term
-        num2 = (2 * np.floor(j / 2) * P + (-1)**(j - 1) * (delta_V + Z) + Z)**2
-        exp2 = np.exp(-0.5 * num2 / SIGMA_V**2)
+        k2 = 2 * np.floor(j / 2) * P
+        num2 = (k2 + ((-1)**(j - 1) * Z) + H)**2
+        exp2 = np.exp(-num2 / (2 * sigma_V**2))
         
-        sum_refl += exp1 + exp2
-        
-    term2 = expV + sum_refl
+        sum_refl += (exp1 + exp2)
+
+    term_vertical_total = term_vertical_base + sum_refl
     
-    return term1 * term2
+    return pre_factor * term_horizontal * term_vertical_total
 
 
 
@@ -185,4 +184,5 @@ def log_prior_coefficients(coeff):
     bk = np.atleast_1d(coeff[2])
     n_coeff = len(ak)
     variance_k = [1/(1+(k+1)**2) for k in range(n_coeff)]
+    return -1/2 * np.sum((ak)**2/variance_k) -1/2 * np.sum((bk)**2/variance_k) -1/2 * (a0)**2
     return -1/2 * np.sum((ak)**2/variance_k) -1/2 * np.sum((bk)**2/variance_k) -1/2 * (a0)**2
