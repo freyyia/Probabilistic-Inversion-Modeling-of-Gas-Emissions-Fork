@@ -38,8 +38,8 @@ physical_constants = {
     'SIGMA_V': 10.0,  # m, vertical dispersion coefficient
     'N_REFL': 5,      # number of reflections
     'P': 1000.0,      # m, PBL height
-    'XS': [2.0, 2.0],       # m, source x-coordinate (multiple sources)
-    'YS': [-2.0, -2.0],       # m, source y-coordinate (multiple sources)
+    'XS': [0.0, 2.0],       # m, source x-coordinate (multiple sources)
+    'YS': [0.0, -2.0],       # m, source y-coordinate (multiple sources)
     'ZS': 0,       # m, source height
     'Z': 0,         # m, sensor height
     'a_H': 1,
@@ -132,7 +132,11 @@ n_sources = 2
 n_coeff = 1
 n_params = n_sources + n_sources*n_coeff + n_sources*n_coeff + n_sources + n_sources
 
-initial_point = np.zeros(n_params) 
+# Initialize at true values to verify model correctness
+true_XS = np.array(physical_constants['XS'])
+true_YS = np.array(physical_constants['YS'])
+true_values_flat = np.concatenate([a0.flatten(), ak.flatten(), bk.flatten(), true_XS.flatten(), true_YS.flatten()])
+initial_point = true_values_flat.copy() + np.random.normal(0, 3, n_params)
 
 def log_posterior(flat_coeff):
     # Reshape flat_coeff to [a0, ak, bk, XS, YS]

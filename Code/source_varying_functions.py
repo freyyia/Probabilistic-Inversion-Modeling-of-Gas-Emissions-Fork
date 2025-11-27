@@ -9,23 +9,23 @@ def wind_function(t, wa0, wa, wb):
         wind += wa[k] * cos(2 * np.pi * (k + 1) * t) + wb[k] * sin(2 * np.pi * (k + 1) * t)
     return wind
 
-def s_function(t,ak,bk,a0):
-    ak = np.array(ak)
-    bk = np.array(bk)
-    a0 = np.array(a0)
+def s_function(t, ak, bk, a0):
+    # ak, bk, a0 are assumed to be arrays (handled in caller)
     
     if ak.ndim == 1:
         n_coeff = ak.shape[0]
         cosines = np.array([cos(2*np.pi*(k+1)*t) for k in range(n_coeff)])
         sines = np.array([sin(2*np.pi*(k+1)*t) for k in range(n_coeff)])
-        return np.dot(ak,cosines) + np.dot(bk,sines) + a0
+        linear_pred = np.dot(ak,cosines) + np.dot(bk,sines) + a0
     else:
         # ak is (N_sources, n_coeff)
         n_coeff = ak.shape[1]
         cosines = np.array([cos(2*np.pi*(k+1)*t) for k in range(n_coeff)])
         sines = np.array([sin(2*np.pi*(k+1)*t) for k in range(n_coeff)])
         # np.dot(ak, cosines) -> (N_sources,)
-        return np.dot(ak, cosines) + np.dot(bk, sines) + a0
+        linear_pred = np.dot(ak, cosines) + np.dot(bk, sines) + a0
+        
+    return np.log1p(np.exp(linear_pred))
 
 # def A_matrix(x_1s,x_2s,x_1,x_2):
 #     return np.exp(-((x_1s-x_1)**2+(x_2s-x_2)**2))
@@ -115,7 +115,7 @@ def A_matrix(x_sensor, y_sensor, constants, wind_vector=None):
     dist_R = np.array(dxlist) * u_vec[0] + np.array(dylist) * u_vec[1]
     dist_H = np.array(dxlist) * wind_vec_perp[0] + np.array(dylist) * wind_vec_perp[1]
     dist_V = Z - ZS 
-
+    
     a_H, b_H = constants['a_H'], constants['b_H']
     a_V, b_V = constants['a_V'], constants['b_V']
     w, h = constants['w'], constants['h']
@@ -235,7 +235,7 @@ class Model:
     # Calculates log_likelihood of data given
     def log_likelihood_y(self, coeff, T, Nt, Nx, data, source_locations=None):
         # Unpack coefficients
-        a0 = coeff[0]
+        a0 = np.array(coeff[0])
         ak = np.atleast_1d(coeff[1])
         bk = np.atleast_1d(coeff[2])
         
@@ -255,17 +255,22 @@ class Model:
             current_constants['XS'] = source_locations[0]
             current_constants['YS'] = source_locations[1]
         
+        # Pre-calculate wind vectors
+        wa0 = current_constants.get('wa0')
+        wa = current_constants.get('wa')
+        wb = current_constants.get('wb')
+        wind_vectors = None
+        if wa0 is not None and wa is not None and wb is not None:
+             wind_vectors = [wind_function(t, wa0, wa, wb) for t in times]
+
         # Iterate over time steps
         for i, t in enumerate(times):
             # Calculate source function value at time t
             st = self.s_function(t, ak, bk, a0)
             
             # Calculate expected value mu(x, t)
-            wa0 = current_constants.get('wa0')
-            wa = current_constants.get('wa')
-            wb = current_constants.get('wb')
-            if wa0 is not None and wa is not None and wb is not None:
-                current_wind = wind_function(t, wa0, wa, wb)
+            if wind_vectors is not None:
+                current_wind = wind_vectors[i]
                 A = A_matrix(data['X1'], data['X2'], current_constants, wind_vector=current_wind)
             else:
                 A = A_matrix(data['X1'], data['X2'], current_constants)
