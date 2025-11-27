@@ -1,3 +1,4 @@
+# %%
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -32,7 +33,7 @@ Lx=1
 physical_constants = {
     'RHO_CH4': 0.656, # kg/m^3, density of methane at 25 deg C and 1 atm
     'U': 5.0,         # m/s, wind speed
-    'wind_vector': np.array([1,1]),
+    'wind_vector': np.array([0,1]),
     'SIGMA_H': 10.0,  # m, horizontal dispersion coefficient
     'SIGMA_V': 10.0,  # m, vertical dispersion coefficient
     'N_REFL': 5,      # number of reflections
@@ -50,14 +51,14 @@ physical_constants = {
     'gamma_H': 1,
     'gamma_V': 1
 }
-
+#%%
 beta = 1
 sigma_epsilon = 0.01
 # Define model class y(t,x)=A(x)s(t)+beta+epsilon
 model = Model(0, 0, beta, sigma_epsilon, s_function, physical_constants)
 t_start = 0
 
-
+#%%
 #Plots over spatial grid for fixed time t
 data = model.gen_data(T,Nt,Nx,Lx,ak,bk,a0)
 plt.contourf(data['X1'],data['X2'],data['Y'][0])
@@ -104,26 +105,26 @@ plt.close()
 # Function for RWMHS given starting point, variance, time steps and posterior
 
 
-#%%
-# Generate data  on grid
-data = model.gen_data(10,100,100,1,ak,bk,a0)
-#Test log_prior
-coefficients = [a0,ak,bk]
-print(log_prior_coefficients(coefficients))
-#y=As+beta+epsilon
-# %%
+# #%%
+# # Generate data  on grid
+# data = model.gen_data(10,100,100,1,ak,bk,a0)
+# #Test log_prior
+# coefficients = [a0,ak,bk]
+# print(log_prior_coefficients(coefficients))
+# #y=As+beta+epsilon
+# # %%
 
-# Test log_likelihood_y
-ll = model.log_likelihood_y(coefficients,T,Nt,Nx,data)
-print(f"Log likelihood: {ll}")
+# # Test log_likelihood_y
+# ll = model.log_likelihood_y(coefficients,T,Nt,Nx,data)
+# print(f"Log likelihood: {ll}")
 
 
 
-def log_posterior(coeff):
-    return log_prior_coefficients(coeff) + model.log_likelihood_y(coeff,T,Nt,Nx,data)
+# def log_posterior(coeff):
+#     return log_prior_coefficients(coeff) + model.log_likelihood_y(coeff,T,Nt,Nx,data)
     
-#Run rwmh
-initial_point = [0,0,0]
-chain,acceptance_rate = rwmh(initial_point,1,10000,log_posterior)
-print(chain)
-print(acceptance_rate)
+# #Run rwmh
+# initial_point = [0,0,0]
+# chain,acceptance_rate = rwmh(initial_point,1,10000,log_posterior)
+# print(chain)
+# print(acceptance_rate)

@@ -185,4 +185,3 @@ def log_prior_coefficients(coeff):
     n_coeff = len(ak)
     variance_k = [1/(1+(k+1)**2) for k in range(n_coeff)]
     return -1/2 * np.sum((ak)**2/variance_k) -1/2 * np.sum((bk)**2/variance_k) -1/2 * (a0)**2
-    return -1/2 * np.sum((ak)**2/variance_k) -1/2 * np.sum((bk)**2/variance_k) -1/2 * (a0)**2
