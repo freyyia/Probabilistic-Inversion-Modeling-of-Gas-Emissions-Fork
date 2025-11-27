@@ -30,15 +30,23 @@ Lx=1
 physical_constants = {
     'RHO_CH4': 0.656, # kg/m^3, density of methane at 25 deg C and 1 atm
     'U': 5.0,         # m/s, wind speed
-    'wind_vector': np.array([1,0]),
+    'wind_vector': np.array([1,1]),
     'SIGMA_H': 10.0,  # m, horizontal dispersion coefficient
     'SIGMA_V': 10.0,  # m, vertical dispersion coefficient
     'N_REFL': 5,      # number of reflections
     'P': 1000.0,      # m, PBL height
-    'XS': 50.0,       # m, source x-coordinate
-    'YS': 50.0,       # m, source y-coordinate
+    'XS': 0.0,       # m, source x-coordinate
+    'YS': 0.0,       # m, source y-coordinate
     'ZS': 0,       # m, source height
-    'Z': 0         # m, sensor height
+    'Z': 0,         # m, sensor height
+    'a_H': 1,
+    'b_H': 1,
+    'w': 1,
+    'a_V': 1,
+    'b_V': 1,
+    'h': 1,
+    'gamma_H': 1,
+    'gamma_V': 1
 }
 
 beta = 1

@@ -78,12 +78,23 @@ def A_matrix(x1, x2, constants):
     YS = constants['YS'] #Source y-coordinate
     ZS = constants['ZS'] #Source height
     Z = constants['Z'] #Sensor height
+    a_H = constants['a_H']
+    b_H = constants['b_H']
+    w = constants['w']
+    a_V = constants['a_V']
+    b_V = constants['b_V']
+    h = constants['h']
+    gamma_H = constants['gamma_H']
+    gamma_V = constants['gamma_V']
     
     vec = (x1-XS,x2-YS)
     wind_vec_perp = np.array([wind_vector[1],-wind_vector[0]])
     wind_perp_normalized = wind_vec_perp / np.linalg.norm(wind_vec_perp)
     
     delta_V = np.dot(vec,wind_perp_normalized)
+    delta_R=np.dot(vec,wind_vector)
+    sigma_H = a_H*(delta_R*tan(gamma_H))**b_H+w 
+    sigma_V = a_V*(delta_R*tan(gamma_V))**b_V+h
     delta_H = Z-ZS
 
     term1 = (10**6 / RHO_CH4) * (1 / (2 * np.pi * U * SIGMA_H * SIGMA_V)) * np.exp(-delta_H**2 / (2 * SIGMA_H**2))
