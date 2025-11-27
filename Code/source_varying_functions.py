@@ -160,7 +160,7 @@ class Model:
             st = self.s_function(t, ak, bk, a0)
             
             # Calculate expected value mu(x, t)
-            mu = A_matrix(self.x_1s,self.x_2s,self.physical_constants)*st + self.beta
+            mu = A_matrix(data['X1'],data['X2'],self.physical_constants)*st + self.beta
             
             # Get observed data for this time step
             y_obs = data_reshaped[i]
