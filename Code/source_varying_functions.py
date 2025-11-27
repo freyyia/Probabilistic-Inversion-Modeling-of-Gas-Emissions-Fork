@@ -1,12 +1,31 @@
 import numpy as np
 from math import cos, sin
 
+
+
+def wind_function(t, wa0, wa, wb):
+    wind = np.array(wa0)
+    for k in range(len(wa)):
+        wind += wa[k] * cos(2 * np.pi * (k + 1) * t) + wb[k] * sin(2 * np.pi * (k + 1) * t)
+    return wind
+
 def s_function(t,ak,bk,a0):
-    n_coeff = ak.shape[0]
-    constant = a0
-    cosines = [cos(2*np.pi*(k+1)*t) for k in range(n_coeff)]
-    sines = [sin(2*np.pi*(k+1)*t) for k in range(n_coeff)]
-    return np.dot(ak,cosines) + np.dot(bk,sines) + a0
+    ak = np.array(ak)
+    bk = np.array(bk)
+    a0 = np.array(a0)
+    
+    if ak.ndim == 1:
+        n_coeff = ak.shape[0]
+        cosines = np.array([cos(2*np.pi*(k+1)*t) for k in range(n_coeff)])
+        sines = np.array([sin(2*np.pi*(k+1)*t) for k in range(n_coeff)])
+        return np.dot(ak,cosines) + np.dot(bk,sines) + a0
+    else:
+        # ak is (N_sources, n_coeff)
+        n_coeff = ak.shape[1]
+        cosines = np.array([cos(2*np.pi*(k+1)*t) for k in range(n_coeff)])
+        sines = np.array([sin(2*np.pi*(k+1)*t) for k in range(n_coeff)])
+        # np.dot(ak, cosines) -> (N_sources,)
+        return np.dot(ak, cosines) + np.dot(bk, sines) + a0
 
 # def A_matrix(x_1s,x_2s,x_1,x_2):
 #     return np.exp(-((x_1s-x_1)**2+(x_2s-x_2)**2))
@@ -55,7 +74,7 @@ def rwmh(start_point, proposal_variance, n_steps, log_posterior):
 
 
 
-def A_matrix(x_sensor, y_sensor, constants):
+def A_matrix(x_sensor, y_sensor, constants, wind_vector=None):
     """
     Calculates the concentration using the Gaussian plume formula with reflections.
     Supports both scalar and vectorized (grid) inputs for x_sensor and y_sensor.
@@ -63,25 +82,38 @@ def A_matrix(x_sensor, y_sensor, constants):
     # 1. Extract Geometry & Wind
     XS, YS, ZS = constants['XS'], constants['YS'], constants['ZS'] # Source
     Z = constants['Z']  # Sensor Height
-    u_vec = np.array(constants['wind_vector'])
-    u_vec = u_vec / np.linalg.norm(u_vec) # Ensure unit vector
-    U_speed = constants['U']
+    
+    if wind_vector is not None:
+        U_speed = np.linalg.norm(wind_vector)
+        if U_speed > 1e-6:
+            u_vec = wind_vector / U_speed
+        else:
+            # Handle zero wind case if necessary, or assume small non-zero
+            u_vec = np.array([1.0, 0.0]) 
+    else:
+        u_vec = np.array(constants['wind_vector'])
+        u_vec = u_vec / np.linalg.norm(u_vec) # Ensure unit vector
+        U_speed = constants['U']
     
     # 2. Coordinate Rotation
-    dx = x_sensor - XS
-    dy = y_sensor - YS
-    # vec_source_to_sensor = np.array([dx, dy]) # This creates shape (2, Nx, Nx) if inputs are grids
+    # Ensure inputs are arrays for uniform processing
+    x_in = np.atleast_1d(x_sensor)
+    y_in = np.atleast_1d(y_sensor)
+    
+    # Now XS can be a list of x coordinates
+    dxlist = []
+    dylist = []
+    XS = np.atleast_1d(XS)
+    YS = np.atleast_1d(YS)
+    for i in range(len(XS)):
+        dxlist.append(x_in - XS[i])
+        dylist.append(y_in - YS[i])
     
     wind_vec_perp = np.array([-u_vec[1], u_vec[0]]) 
     
     # Project to get Downwind (dist_R) and Crosswind (dist_H) distances
-    # Manual dot product to handle broadcasting correctly
-    # dist_R = dx * u_x + dy * u_y
-    dist_R = dx * u_vec[0] + dy * u_vec[1]
-    
-    # dist_H = dx * perp_x + dy * perp_y
-    dist_H = dx * wind_vec_perp[0] + dy * wind_vec_perp[1]
-    
+    dist_R = np.array(dxlist) * u_vec[0] + np.array(dylist) * u_vec[1]
+    dist_H = np.array(dxlist) * wind_vec_perp[0] + np.array(dylist) * wind_vec_perp[1]
     dist_V = Z - ZS 
 
     a_H, b_H = constants['a_H'], constants['b_H']
@@ -90,68 +122,25 @@ def A_matrix(x_sensor, y_sensor, constants):
     gamma_H = constants['gamma_H']
     gamma_V = constants['gamma_V']
 
-    # We need to handle the condition dist_R <= 0.1 safely for arrays
-    # Create a mask for valid downwind distances
-    # If inputs are scalars, this works as normal boolean. If arrays, it's a boolean array.
+    # Mask for downwind distances
     valid_mask = dist_R > 0.1
     
-    # Initialize result array (or scalar) with zeros
-    if np.isscalar(dist_R):
-        if not valid_mask:
-            return 0.0
-        # If scalar and valid, we proceed. 
-        # To keep logic unified, we can just compute and return.
-        sigma_H = a_H * (dist_R * np.tan(gamma_H))**b_H + w
-        sigma_V = a_V * (dist_R * np.tan(gamma_V))**b_V + h
-        
-        rho_ch4 = constants['RHO_CH4']
-        pre_factor = (10**4 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V) 
-        
-        term_horizontal = np.exp(-(dist_H**2) / (2 * sigma_H**2))
-        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
-
-        N_REFL = constants['N_REFL']
-        P = constants['P']
-        H = ZS 
-        
-        sum_refl = 0
-        for j in range(1, N_REFL + 1):
-            k1 = 2 * np.floor((j + 1) / 2) * P
-            num1 = (k1 + ((-1)**j * Z) - H)**2
-            exp1 = np.exp(-num1 / (2 * sigma_V**2))
-            
-            k2 = 2 * np.floor(j / 2) * P
-            num2 = (k2 + ((-1)**(j - 1) * Z) + H)**2
-            exp2 = np.exp(-num2 / (2 * sigma_V**2))
-            
-            sum_refl += (exp1 + exp2)
-
-        term_vertical_total = term_vertical_base + sum_refl
-        
-        return pre_factor * term_horizontal * term_vertical_total
-
-    else:
-        # Array case
-        result = np.zeros_like(dist_R)
-        
-        # Only compute for valid points to avoid warnings/errors
-        # We can use boolean indexing
-        
-        # Extract valid elements
-        dist_R_valid = dist_R[valid_mask]
-        dist_H_valid = dist_H[valid_mask]
-        
-        if dist_R_valid.size == 0:
-            return result
-            
+    # Initialize result array
+    result = np.zeros_like(dist_R)
+    
+    # Extract valid elements
+    dist_R_valid = dist_R[valid_mask]
+    dist_H_valid = dist_H[valid_mask]
+    
+    if dist_R_valid.size > 0:
         sigma_H = a_H * (dist_R_valid * np.tan(gamma_H))**b_H + w
         sigma_V = a_V * (dist_R_valid * np.tan(gamma_V))**b_V + h
         
-        # pre_factor = (1.0) / (2 * np.pi * U_speed * sigma_H * sigma_V)
-        pre_factor = 1.0 / (2 * np.pi * U_speed * sigma_H * sigma_V)
+        rho_ch4 = constants['RHO_CH4']
+        pre_factor = (100 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
         
         term_horizontal = np.exp(-(dist_H_valid**2) / (2 * sigma_H**2))
-        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2)) # dist_V is scalar, sigma_V is array
+        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2)) 
         
         N_REFL = constants['N_REFL']
         P = constants['P']
@@ -173,8 +162,24 @@ def A_matrix(x_sensor, y_sensor, constants):
         
         # Assign back to result
         result[valid_mask] = pre_factor * term_horizontal * term_vertical_total
-        
-        return result
+    
+    # Return result. Shape is (N_sources, N_pixels)
+    # If input was reshaped, we might want to reshape back, but since we have multiple sources,
+    # returning (N_sources, ...) is appropriate.
+    # If x_sensor was scalar, result is (N_sources, 1) -> (N_sources,)
+    if np.isscalar(x_sensor) and np.isscalar(y_sensor):
+        return result.flatten()
+    else:
+        # If x_sensor was (N,), result is (N_sources, N)
+        # If x_sensor was (N, M), result is (N_sources, N*M) because we flattened inputs?
+        # Wait, inputs were np.atleast_1d.
+        # If x_sensor was grid (N, N), flattened to (N*N).
+        # We want to preserve the spatial shape if possible, but with N_sources dimension.
+        # Let's return (N_sources, original_shape)
+        original_shape = np.shape(x_sensor)
+        if len(original_shape) == 0:
+             return result.flatten()
+        return result.reshape((len(XS),) + original_shape)
 
 
 
@@ -186,7 +191,35 @@ class Model:
         self.physical_constants = physical_constants
     # Observation at (x_1,x_2) at time t
     def y(self,x_1,x_2,t,ak,bk,a0):
-        return A_matrix(x_1,x_2,self.physical_constants)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
+        wa0 = self.physical_constants.get('wa0')
+        wa = self.physical_constants.get('wa')
+        wb = self.physical_constants.get('wb')
+        if wa0 is not None and wa is not None and wb is not None:
+            current_wind = wind_function(t, wa0, wa, wb)
+            A = A_matrix(x_1, x_2, self.physical_constants, wind_vector=current_wind)
+        else:
+            A = A_matrix(x_1, x_2, self.physical_constants)
+            
+        # A is (N_sources, ...). 
+        # st is scalar or (N_sources,)
+        
+        if np.ndim(self.s_function(t, ak, bk, a0)) > 0:
+             # st is vector (independent sources)
+             st = self.s_function(t, ak, bk, a0)
+             # Reshape st to broadcast against A
+             # A shape: (N_sources, ...)
+             st_reshaped = st.reshape((len(st),) + (1,) * (A.ndim - 1))
+             mu = np.sum(A * st_reshaped, axis=0) + self.beta
+        else:
+             # st is scalar (shared source function)
+             st = self.s_function(t, ak, bk, a0)
+             if A.ndim > np.ndim(x_1): # Check if we have extra dimension for sources
+                  A_sum = np.sum(A, axis=0)
+             else:
+                  A_sum = A
+             mu = A_sum * st + self.beta
+             
+        return mu + np.random.normal(0, self.sigma_epsilon)
     # Generate data at Nt time steps
     def gen_data(self,T,Nt,Nx,Lx,ak,bk,a0):
         x_1 = np.linspace(-Lx, Lx, Nx)
@@ -222,7 +255,29 @@ class Model:
             st = self.s_function(t, ak, bk, a0)
             
             # Calculate expected value mu(x, t)
-            mu = A_matrix(data['X1'],data['X2'],self.physical_constants)*st + self.beta
+            # Calculate expected value mu(x, t)
+            wa0 = self.physical_constants.get('wa0')
+            wa = self.physical_constants.get('wa')
+            wb = self.physical_constants.get('wb')
+            if wa0 is not None and wa is not None and wb is not None:
+                current_wind = wind_function(t, wa0, wa, wb)
+                A = A_matrix(data['X1'], data['X2'], self.physical_constants, wind_vector=current_wind)
+            else:
+                A = A_matrix(data['X1'], data['X2'], self.physical_constants)
+            
+            # A is (N_sources, ...). 
+            # st is scalar or (N_sources,)
+            if np.ndim(st) > 0:
+                # st is vector
+                st_reshaped = st.reshape((len(st),) + (1,) * (A.ndim - 1))
+                mu = np.sum(A * st_reshaped, axis=0) + self.beta
+            else:
+                # st is scalar
+                if A.ndim > data['X1'].ndim:
+                    A_sum = np.sum(A, axis=0)
+                else:
+                    A_sum = A
+                mu = A_sum*st + self.beta
             
             # Get observed data for this time step
             y_obs = data_reshaped[i]
@@ -238,9 +293,28 @@ class Model:
 
 # Define log prior of source coefficients
 def log_prior_coefficients(coeff):
-    a0 = coeff[0]
-    ak = np.atleast_1d(coeff[1])
-    bk = np.atleast_1d(coeff[2])
-    n_coeff = len(ak)
-    variance_k = [1/(1+(k+1)**2) for k in range(n_coeff)]
-    return -1/2 * np.sum((ak)**2/variance_k) -1/2 * np.sum((bk)**2/variance_k) -1/2 * (a0)**2
+    a0 = np.array(coeff[0])
+    ak = np.array(coeff[1])
+    bk = np.array(coeff[2])
+    
+    # Flatten to handle both 1D and 2D cases
+    ak_flat = ak.flatten()
+    bk_flat = bk.flatten()
+    a0_flat = a0.flatten()
+    
+    # Variance depends on k index. 
+    # If 2D, ak is (N_sources, n_coeff). k corresponds to column index.
+    if ak.ndim == 2:
+        n_coeff = ak.shape[1]
+        variance_k = np.array([1/(1+(k+1)**2) for k in range(n_coeff)])
+        # Broadcast variance_k to (N_sources, n_coeff)
+        variance_matrix = np.tile(variance_k, (ak.shape[0], 1))
+        term_ak = np.sum(ak**2 / variance_matrix)
+        term_bk = np.sum(bk**2 / variance_matrix)
+    else:
+        n_coeff = len(ak)
+        variance_k = np.array([1/(1+(k+1)**2) for k in range(n_coeff)])
+        term_ak = np.sum(ak**2 / variance_k)
+        term_bk = np.sum(bk**2 / variance_k)
+        
+    return -0.5 * term_ak - 0.5 * term_bk - 0.5 * np.sum(a0**2)
