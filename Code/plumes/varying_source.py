@@ -55,7 +55,7 @@ physical_constants = {
 beta = 1
 sigma_epsilon = 0.01
 # Define model class y(t,x)=A(x)s(t)+beta+epsilon
-model = Model(0, 0, beta, sigma_epsilon, s_function, physical_constants)
+model = Model(beta, sigma_epsilon, s_function, physical_constants)
 t_start = 0
 
 #%%
