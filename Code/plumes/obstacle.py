@@ -10,7 +10,7 @@ a0 =4
 ak = np.array([1])
 bk = np.array([1])
 beta = 1
-sigma_epsilon = 0.01
+sigma_epsilon = 0.001
 # Define model class y(t,x)=A(x)s(t)+beta+epsilon
 class ModelObstacle:
     def __init__(self,x_1s,x_2s,
@@ -31,8 +31,8 @@ class ModelObstacle:
         return (self.A_matrix(self.x_1s,self.x_2s,x_1,x_2,
                             self.x_1o1, self.x_2o1,
                             self.x_1o2, self.x_2o2,
-                            )*self.s_function(t,ak,bk,a0) +
-                            self.beta+np.random.normal(0,self.sigma_epsilon))
+                            ) *self.s_function(t,ak,bk,a0) +
+                             self.beta +np.random.normal(0,self.sigma_epsilon))
 
 
 
@@ -41,7 +41,7 @@ class ModelObstacle:
 
 #Tests the model
 x_1s =5
-x_2s =4
+x_2s =5
 x_1o1 = 4
 x_2o1 = 7
 x_1o2 = 6
