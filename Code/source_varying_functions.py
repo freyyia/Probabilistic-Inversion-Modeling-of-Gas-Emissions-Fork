@@ -52,91 +52,195 @@ def rwmh(start_point, proposal_variance, n_steps, log_posterior):
     return np.array(chain), acceptance_rate
 
 
-def log_likelihood_y(coeff, data, x_1s, x_2s, beta, sigma_epsilon, A_matrix):
-    # Unpack coefficients
+
+
+
+def A_matrix(x_sensor, y_sensor, constants):
+    """
+    Calculates the concentration using the Gaussian plume formula with reflections.
+    Supports both scalar and vectorized (grid) inputs for x_sensor and y_sensor.
+    """
+    # 1. Extract Geometry & Wind
+    XS, YS, ZS = constants['XS'], constants['YS'], constants['ZS'] # Source
+    Z = constants['Z']  # Sensor Height
+    u_vec = np.array(constants['wind_vector'])
+    u_vec = u_vec / np.linalg.norm(u_vec) # Ensure unit vector
+    U_speed = constants['U']
+    
+    # 2. Coordinate Rotation
+    dx = x_sensor - XS
+    dy = y_sensor - YS
+    # vec_source_to_sensor = np.array([dx, dy]) # This creates shape (2, Nx, Nx) if inputs are grids
+    
+    wind_vec_perp = np.array([-u_vec[1], u_vec[0]]) 
+    
+    # Project to get Downwind (dist_R) and Crosswind (dist_H) distances
+    # Manual dot product to handle broadcasting correctly
+    # dist_R = dx * u_x + dy * u_y
+    dist_R = dx * u_vec[0] + dy * u_vec[1]
+    
+    # dist_H = dx * perp_x + dy * perp_y
+    dist_H = dx * wind_vec_perp[0] + dy * wind_vec_perp[1]
+    
+    dist_V = Z - ZS 
+
+    a_H, b_H = constants['a_H'], constants['b_H']
+    a_V, b_V = constants['a_V'], constants['b_V']
+    w, h = constants['w'], constants['h']
+    gamma_H = constants['gamma_H']
+    gamma_V = constants['gamma_V']
+
+    # We need to handle the condition dist_R <= 0.1 safely for arrays
+    # Create a mask for valid downwind distances
+    # If inputs are scalars, this works as normal boolean. If arrays, it's a boolean array.
+    valid_mask = dist_R > 0.1
+    
+    # Initialize result array (or scalar) with zeros
+    if np.isscalar(dist_R):
+        if not valid_mask:
+            return 0.0
+        # If scalar and valid, we proceed. 
+        # To keep logic unified, we can just compute and return.
+        sigma_H = a_H * (dist_R * np.tan(gamma_H))**b_H + w
+        sigma_V = a_V * (dist_R * np.tan(gamma_V))**b_V + h
+        
+        rho_ch4 = constants['RHO_CH4']
+        pre_factor = (10**4 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V) 
+        
+        term_horizontal = np.exp(-(dist_H**2) / (2 * sigma_H**2))
+        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
+
+        N_REFL = constants['N_REFL']
+        P = constants['P']
+        H = ZS 
+        
+        sum_refl = 0
+        for j in range(1, N_REFL + 1):
+            k1 = 2 * np.floor((j + 1) / 2) * P
+            num1 = (k1 + ((-1)**j * Z) - H)**2
+            exp1 = np.exp(-num1 / (2 * sigma_V**2))
+            
+            k2 = 2 * np.floor(j / 2) * P
+            num2 = (k2 + ((-1)**(j - 1) * Z) + H)**2
+            exp2 = np.exp(-num2 / (2 * sigma_V**2))
+            
+            sum_refl += (exp1 + exp2)
+
+        term_vertical_total = term_vertical_base + sum_refl
+        
+        return pre_factor * term_horizontal * term_vertical_total
+
+    else:
+        # Array case
+        result = np.zeros_like(dist_R)
+        
+        # Only compute for valid points to avoid warnings/errors
+        # We can use boolean indexing
+        
+        # Extract valid elements
+        dist_R_valid = dist_R[valid_mask]
+        dist_H_valid = dist_H[valid_mask]
+        
+        if dist_R_valid.size == 0:
+            return result
+            
+        sigma_H = a_H * (dist_R_valid * np.tan(gamma_H))**b_H + w
+        sigma_V = a_V * (dist_R_valid * np.tan(gamma_V))**b_V + h
+        
+        # pre_factor = (1.0) / (2 * np.pi * U_speed * sigma_H * sigma_V)
+        pre_factor = 1.0 / (2 * np.pi * U_speed * sigma_H * sigma_V)
+        
+        term_horizontal = np.exp(-(dist_H_valid**2) / (2 * sigma_H**2))
+        term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2)) # dist_V is scalar, sigma_V is array
+        
+        N_REFL = constants['N_REFL']
+        P = constants['P']
+        H = ZS 
+        
+        sum_refl = np.zeros_like(sigma_V)
+        for j in range(1, N_REFL + 1):
+            k1 = 2 * np.floor((j + 1) / 2) * P
+            num1 = (k1 + ((-1)**j * Z) - H)**2
+            exp1 = np.exp(-num1 / (2 * sigma_V**2))
+            
+            k2 = 2 * np.floor(j / 2) * P
+            num2 = (k2 + ((-1)**(j - 1) * Z) + H)**2
+            exp2 = np.exp(-num2 / (2 * sigma_V**2))
+            
+            sum_refl += (exp1 + exp2)
+
+        term_vertical_total = term_vertical_base + sum_refl
+        
+        # Assign back to result
+        result[valid_mask] = pre_factor * term_horizontal * term_vertical_total
+        
+        return result
+
+
+
+class Model:
+    def __init__(self,beta,sigma_epsilon,s_function, physical_constants):
+        self.beta = beta
+        self.sigma_epsilon = sigma_epsilon
+        self.s_function = s_function
+        self.physical_constants = physical_constants
+    # Observation at (x_1,x_2) at time t
+    def y(self,x_1,x_2,t,ak,bk,a0):
+        return A_matrix(x_1,x_2,self.physical_constants)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
+    # Generate data at Nt time steps
+    def gen_data(self,T,Nt,Nx,Lx,ak,bk,a0):
+        x_1 = np.linspace(-Lx, Lx, Nx)
+        x_2 = np.linspace(-Lx, Lx, Nx)
+        X_1, X_2 = np.meshgrid(x_1, x_2)
+        Y_list = []
+        for t in np.linspace(0,T,Nt):
+            Yt = np.array([self.y(x_1, x_2, t,ak,bk,a0) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
+            Y_list.append(Yt)
+        Y = np.array(Y_list)
+        return {'X1': X_1, 'X2': X_2, 'Y': Y}
+        
+    # Calculates log_likelihood of data given
+    def log_likelihood_y(self,coeff, T, Nt, Nx, data):
+        # Unpack coefficients
+        a0 = coeff[0]
+        ak = np.atleast_1d(coeff[1])
+        bk = np.atleast_1d(coeff[2])
+        
+        # Create grids
+        times = np.linspace(0, T, Nt)
+
+        
+        # Reshape data to (nt, nx*nx)
+        data_reshaped = data['Y'].reshape(Nt, -1)
+        
+        log_likelihood = 0
+        var = self.sigma_epsilon**2
+        
+        # Iterate over time steps
+        for i, t in enumerate(times):
+            # Calculate source function value at time t
+            st = self.s_function(t, ak, bk, a0)
+            
+            # Calculate expected value mu(x, t)
+            mu = A_matrix(data['X1'],data['X2'],self.physical_constants)*st + self.beta
+            
+            # Get observed data for this time step
+            y_obs = data_reshaped[i]
+            
+            # Update log likelihood
+            # mu is (Nx, Nx), y_obs is (Nx*Nx,)
+            sq_residuals = (y_obs - mu.flatten())**2
+            log_likelihood += -0.5 * np.sum(sq_residuals) / var
+            
+        return log_likelihood
+
+
+
+# Define log prior of source coefficients
+def log_prior_coefficients(coeff):
     a0 = coeff[0]
     ak = np.atleast_1d(coeff[1])
     bk = np.atleast_1d(coeff[2])
-    
-    # Grid parameters
-    T = 10
-    nt = 100
-    nx = 100
-    
-    # Create grids
-    times = np.linspace(0, T, nt)
-    x_1 = np.linspace(-1, 1, nx)
-    x_2 = np.linspace(-1, 1, nx)
-    X_1, X_2 = np.meshgrid(x_1, x_2)
-    
-    # Flatten spatial coordinates
-    X1_flat = X_1.flatten()
-    X2_flat = X_2.flatten()
-    
-    # Calculate A matrix (spatial component)
-    A = A_matrix(x_1s, x_2s, X1_flat, X2_flat)
-    
-    # Reshape data to (nt, nx*nx)
-    data_reshaped = data.reshape(nt, -1)
-    
-    log_likelihood = 0
-    var = sigma_epsilon**2
-    
-    # Iterate over time steps
-    for i, t in enumerate(times):
-        # Calculate source function value at time t
-        st = s_function(t, ak, bk, a0)
-        
-        # Calculate expected value mu(x, t)
-        mu = A * st + beta
-        
-        # Get observed data for this time step
-        y_obs = data_reshaped[i]
-        
-        # Update log likelihood
-        sq_residuals = (y_obs - mu)**2
-        log_likelihood += -0.5 * np.sum(sq_residuals) / var
-        
-    return log_likelihood
-
-def A_matrix(x, y, constants):
-    """
-    Calculates the coupling matrix A using the Gaussian plume formula.
-    
-    Args:
-        x: Sensor x-coordinate
-        y: Sensor y-coordinate
-        constants: Constants dictionary
-        
-    Returns:
-        Concentration per unit source rate.
-    """
-    #Extract constants
-    RHO_CH4 = constants['RHO_CH4']
-    U = constants['U']
-    SIGMA_H = constants['SIGMA_H']
-    SIGMA_V = constants['SIGMA_V']
-    N_REFL = constants['N_REFL']
-    P = constants['P']
-    XS = constants['XS'] #Source x-coordinate
-    YS = constants['YS'] #Source y-coordinate
-    ZS = constants['ZS'] #Source height
-    H = constants['H'] #Sensor height
-    
-    term1 = (10**6 / RHO_CH4) * (1 / (2 * np.pi * U * SIGMA_H * SIGMA_V)) * np.exp(-delta_H**2 / (2 * SIGMA_H**2))
-    
-    sum_refl = 0
-    for j in range(1, N_REFL + 1):
-        # First reflection term
-        num1 = (2 * np.floor((j + 1) / 2) * P + (-1)**j * (delta_V + H) - H)**2
-        exp1 = np.exp(-0.5 * num1 / SIGMA_V**2)
-        
-        # Second reflection term
-        num2 = (2 * np.floor(j / 2) * P + (-1)**(j - 1) * (delta_V + H) + H)**2
-        exp2 = np.exp(-0.5 * num2 / SIGMA_V**2)
-        
-        sum_refl += exp1 + exp2
-        
-    term2 = np.exp(-delta_V**2 / (2 * SIGMA_V**2)) + sum_refl
-    
-    return term1 * term2
+    n_coeff = len(ak)
+    variance_k = [1/(1+(k+1)**2) for k in range(n_coeff)]
+    return -1/2 * np.sum((ak)**2/variance_k) -1/2 * np.sum((bk)**2/variance_k) -1/2 * (a0)**2
