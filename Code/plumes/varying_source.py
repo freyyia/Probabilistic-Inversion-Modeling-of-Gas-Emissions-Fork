@@ -37,18 +37,20 @@ physical_constants = {
     'P': 1000.0,      # m, PBL height
     'XS': 50.0,       # m, source x-coordinate
     'YS': 50.0,       # m, source y-coordinate
-    'ZS': 50.0,       # m, source height
+    'ZS': 2.0,       # m, source height
     'Z': 2.0         # m, sensor height
 }
 
 beta = 1
 sigma_epsilon = 0.01
 # Define model class y(t,x)=A(x)s(t)+beta+epsilon
+model = Model(0, 0, beta, sigma_epsilon, s_function, physical_constants)
+t_start = 0
 
 
 #Plots over spatial grid for fixed time t
 data = model.gen_data(T,Nt,Nx,Lx,ak,bk,a0)
-plt.contourf(data['X1'],data['X2'],data['Y'])
+plt.contourf(data['X1'],data['X2'],data['Y'][0])
 plt.colorbar()
 plt.show()
 # Now varies time in plot too
@@ -59,25 +61,25 @@ fig, ax = plt.subplots()
 
 # Initial plot
 data = model.gen_data(T,Nt,Nx,Lx,ak,bk,a0)
-contour = ax.contourf(data['X1'], data['X2'], data['Y'], levels=20, cmap='viridis')
+contour = ax.contourf(data['X1'], data['X2'], data['Y'][0], levels=20, cmap='viridis')
 cbar = fig.colorbar(contour)
 ax.set_title(f'Observation Model at t={t_start:.2f}')
 
 def update(frame):
     ax.clear()
-    t = frame * 0.01  # Time step
-    data = model.gen_data(T,Nt,Nx,Lx,ak,bk,a0)
-    contour = ax.contourf(data['X1'], data['X2'], data['Y'], levels=20, cmap='viridis')
+    t = frame * T / (Nt - 1)
+    # data is already generated outside
+    contour = ax.contourf(data['X1'], data['X2'], data['Y'][frame], levels=20, cmap='viridis')
     ax.set_title(f'Observation Model at t={t:.2f}')
     return contour,
 
 # Create animation
-ani = animation.FuncAnimation(fig, update, frames=50, interval=200)
+ani = animation.FuncAnimation(fig, update, frames=Nt, interval=200)
 
 # Save animation
 try:
-    ani.save('observation_model_animation.gif', writer='pillow')
-    print("Animation saved as observation_model_animation.gif")
+    ani.save('observation_Model_animation.gif', writer='pillow')
+    print("Animation saved as observation_Model_animation.gif")
 except Exception as e:
     print(f"Could not save animation: {e}")
     plt.show()

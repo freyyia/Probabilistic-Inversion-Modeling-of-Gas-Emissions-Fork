@@ -114,19 +114,21 @@ class Model:
         self.beta = beta
         self.sigma_epsilon = sigma_epsilon
         self.s_function = s_function
+        self.physical_constants = physical_constants
         self.A_matrix = A_matrix(self.x_1s,self.x_2s,physical_constants)
     # Observation at (x_1,x_2) at time t
     def y(self,x_1,x_2,t,ak,bk,a0):
-        return self.A_matrix*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
+        return A_matrix(x_1,x_2,self.physical_constants)*self.s_function(t,ak,bk,a0)+self.beta+np.random.normal(0,self.sigma_epsilon)
     # Generate data at Nt time steps
     def gen_data(self,T,Nt,Nx,Lx,ak,bk,a0):
         x_1 = np.linspace(-Lx, Lx, Nx)
         x_2 = np.linspace(-Lx, Lx, Nx)
         X_1, X_2 = np.meshgrid(x_1, x_2)
-        Y = np.array([])
+        Y_list = []
         for t in np.linspace(0,T,Nt):
             Yt = np.array([self.y(x_1, x_2, t,ak,bk,a0) for x_1, x_2 in zip(X_1.flatten(), X_2.flatten())]).reshape(X_1.shape)
-            Y = np.append(Y,Yt)
+            Y_list.append(Yt)
+        Y = np.array(Y_list)
         return {'X1': X_1, 'X2': X_2, 'Y': Y}
         
     # Calculates log_likelihood of data given
