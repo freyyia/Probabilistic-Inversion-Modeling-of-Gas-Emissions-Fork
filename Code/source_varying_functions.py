@@ -90,9 +90,7 @@ def A_matrix(x_sensor, y_sensor, constants):
     gamma_H = constants['gamma_H']
     gamma_V = constants['gamma_V']
 
-    # We need to handle the condition dist_R <= 0.1 safely for arrays
-    # Create a mask for valid downwind distances
-    # If inputs are scalars, this works as normal boolean. If arrays, it's a boolean array.
+    # Mask for downwind distances
     valid_mask = dist_R > 0.1
     
     # Initialize result array (or scalar) with zeros
@@ -105,7 +103,7 @@ def A_matrix(x_sensor, y_sensor, constants):
         sigma_V = a_V * (dist_R * np.tan(gamma_V))**b_V + h
         
         rho_ch4 = constants['RHO_CH4']
-        pre_factor = (10**4 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V) 
+        pre_factor = (1 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V) 
         
         term_horizontal = np.exp(-(dist_H**2) / (2 * sigma_H**2))
         term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
@@ -148,7 +146,8 @@ def A_matrix(x_sensor, y_sensor, constants):
         sigma_V = a_V * (dist_R_valid * np.tan(gamma_V))**b_V + h
         
         # pre_factor = (1.0) / (2 * np.pi * U_speed * sigma_H * sigma_V)
-        pre_factor = 1.0 / (2 * np.pi * U_speed * sigma_H * sigma_V)
+        rho_ch4 = constants['RHO_CH4']
+        pre_factor = (1 / rho_ch4) / (2 * np.pi * U_speed * sigma_H * sigma_V)
         
         term_horizontal = np.exp(-(dist_H_valid**2) / (2 * sigma_H**2))
         term_vertical_base = np.exp(-(dist_V**2) / (2 * sigma_V**2)) # dist_V is scalar, sigma_V is array
