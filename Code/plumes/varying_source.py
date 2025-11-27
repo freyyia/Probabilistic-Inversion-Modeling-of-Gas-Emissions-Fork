@@ -37,8 +37,8 @@ physical_constants = {
     'P': 1000.0,      # m, PBL height
     'XS': 50.0,       # m, source x-coordinate
     'YS': 50.0,       # m, source y-coordinate
-    'ZS': 2.0,       # m, source height
-    'Z': 2.0         # m, sensor height
+    'ZS': 0,       # m, source height
+    'Z': 0         # m, sensor height
 }
 
 beta = 1
