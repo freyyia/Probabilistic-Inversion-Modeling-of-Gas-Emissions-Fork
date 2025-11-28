@@ -18,10 +18,10 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # Import core functions and Model from the refactored module
 try:
-    from source_varying_functions import wind_function, s_function, A_matrix, log_prior_coefficients, rwmh, Model
+    from source_varying_functions import wind_function, s_function, A_matrix, log_prior_coefficients, rwmh, Model, AdaptiveMetropolis
 except ImportError:
     # Fallback if path manipulation didn't work as expected
-    from Problem_solving.source_varying_functions import wind_function, s_function, A_matrix, log_prior_coefficients, rwmh, Model
+    from Problem_solving.source_varying_functions import wind_function, s_function, A_matrix, log_prior_coefficients, rwmh, Model, AdaptiveMetropolis
 
 # ==========================================
 # PART 2: PLOTTING & DEMOS
@@ -155,11 +155,17 @@ def run_inference_and_plots():
     # Initial point near truth
     initial_point = np.array([1.0, 1.0, 0.0, 2.0, -2.0])
     
-    print("Running MCMC...")
-    chain, acc = rwmh(initial_point, 0.05, 5000, log_posterior)
-    print(f"MCMC Acceptance Rate: {acc}")
+    print("Running Adaptive MCMC...")
+    sampler = AdaptiveMetropolis(
+        target_log_prob=log_posterior,
+        start_point=initial_point,
+        t0=1000
+    )
+    chain, acc = sampler.sample(n_steps=10000)
+    print(f"MCMC Acceptance Rate: {acc:.3f}")
+    print(f"Learned Covariance Diagonal: {np.diag(sampler.cov)}")
     
-    burn_in = 1000
+    burn_in = 2000
     chain_burned = chain[burn_in:]
     mean_params = np.mean(chain_burned, axis=0)
     
@@ -190,8 +196,13 @@ def run_inference_and_plots():
         ll = model.log_likelihood(params, data)
         return lp + ll
         
-    chain_static, _ = rwmh(np.array([0.5, 0.0, 0.0]), 0.05, 2000, log_posterior_static)
-    mean_static = np.mean(chain_static[500:], axis=0)
+    sampler_static = AdaptiveMetropolis(
+        target_log_prob=log_posterior_static,
+        start_point=np.array([0.5, 0.0, 0.0]),
+        t0=500
+    )
+    chain_static, _ = sampler_static.sample(n_steps=3000)
+    mean_static = np.mean(chain_static[1000:], axis=0)
 
     # --- PLOT 2: 95% CI for Source Intensity ---
     print("Generating 95% CI Plot...")
@@ -340,15 +351,19 @@ def run_rmse_scaling_analysis():
         # Static
         def lp_stat(fc):
             return -0.5*np.sum(fc[0]**2) + model.log_likelihood({'a0':fc[0:1], 'XS':fc[1:2], 'YS':fc[2:3]}, data)
-        chain_stat, _ = rwmh(np.array([0.5, 0.0, 0.0]), 0.1, 500, lp_stat)
-        mean_stat = np.mean(chain_stat[200:], axis=0)
+        
+        sampler_stat = AdaptiveMetropolis(lp_stat, np.array([0.5, 0.0, 0.0]), t0=200)
+        chain_stat, _ = sampler_stat.sample(1000)
+        mean_stat = np.mean(chain_stat[500:], axis=0)
         
         # Dynamic
         def lp_dyn(fc):
              p = {'a0':fc[0:1], 'ak':fc[1:2].reshape(1,1), 'bk':fc[2:3].reshape(1,1), 'XS':fc[3:4], 'YS':fc[4:5]}
              return log_prior_coefficients([p['a0'], p['ak'], p['bk']]) + model.log_likelihood(p, data)
-        chain_dyn, _ = rwmh(np.array([1.0, 1.0, 0.0, 2.0, -2.0]), 0.05, 500, lp_dyn)
-        mean_dyn = np.mean(chain_dyn[200:], axis=0)
+        
+        sampler_dyn = AdaptiveMetropolis(lp_dyn, np.array([1.0, 1.0, 0.0, 2.0, -2.0]), t0=200)
+        chain_dyn, _ = sampler_dyn.sample(1000)
+        mean_dyn = np.mean(chain_dyn[500:], axis=0)
         
         # 1. Intensity RMSE
         t_eval = np.linspace(0, T, 50)

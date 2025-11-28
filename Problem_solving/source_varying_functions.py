@@ -1,6 +1,6 @@
 import numpy as np
 from math import cos, sin
-from typing import List, Dict, Union, Optional, Tuple, Any
+from typing import List, Dict, Union, Optional, Tuple, Any, Callable
 
 def wind_function(t: Union[float, np.ndarray], wa0: np.ndarray, wa: List[np.ndarray], wb: List[np.ndarray]) -> np.ndarray:
     """
@@ -164,13 +164,6 @@ def A_matrix(x_sensor: np.ndarray, y_sensor: np.ndarray, constants: Dict, wind_v
     
     result = np.zeros_like(dist_R)
     
-    # We can't easily use boolean indexing for assignment if we want to keep shape.
-    # Instead, use where or calculation on all (with safe ops).
-    # For efficiency with mask, we might need to loop or use masked arrays.
-    # Given the complexity of the formula, let's calculate on valid points only?
-    # But valid points differ per time/source/pixel.
-    # Let's use np.where to avoid invalid power ops.
-    
     dR_safe = np.where(valid_mask, dist_R, 1.0) # Avoid <= 0 for power
     
     a_H, b_H = constants['a_H'], constants['b_H']
@@ -190,25 +183,6 @@ def A_matrix(x_sensor: np.ndarray, y_sensor: np.ndarray, constants: Dict, wind_v
     term_V_base = np.exp(-(dist_V**2) / (2 * sigma_V**2))
     
     # Reflections
-    N_REFL = constants.get('N_REFL', 0) # Default 0 if not present? Usually 5?
-    # Check if N_REFL is in constants, if not assume 0 or check code
-    # presentation_plots doesn't define N_REFL in consts dict!
-    # But source_varying_functions used it.
-    # Wait, presentation_plots consts: 'a_H', 'b_H', etc. No N_REFL.
-    # But A_matrix in source_varying_functions used it.
-    # Let's assume N_REFL=0 if not in constants, or use a default.
-    # presentation_plots A_matrix implementation didn't have reflections loop?
-    # Let's check presentation_plots A_matrix again.
-    # It DOES NOT have the reflection loop.
-    # source_varying_functions A_matrix DOES have it.
-    # I should probably keep the reflection loop but default N_REFL to 0 if not provided, to match presentation_plots behavior if needed, or better yet, improve it.
-    # But wait, presentation_plots A_matrix:
-    # term_V = np.exp(-(dist_V**2) / (2 * sigma_V**2))
-    # No reflection loop.
-    # source_varying_functions A_matrix:
-    # Has reflection loop.
-    # I will include the reflection loop but make it optional based on constants.
-    
     term_V_total = term_V_base
     if 'N_REFL' in constants:
         N_REFL = constants['N_REFL']
@@ -282,6 +256,97 @@ def rwmh(start_point: np.ndarray, proposal_variance: float, n_steps: int, log_po
         
     acceptance_rate = accepted_count / n_steps
     return np.array(chain), acceptance_rate
+
+class AdaptiveMetropolis:
+    """
+    Adaptive Metropolis (AM) sampler (Haario et al., 2001).
+    Automatically tunes the proposal covariance matrix based on chain history.
+    """
+    def __init__(self, target_log_prob: Callable, start_point: np.ndarray, 
+                 t0: int = 1000, epsilon: float = 1e-6):
+        """
+        Args:
+            target_log_prob: Function returning log-posterior.
+            start_point: Initial parameter vector.
+            t0: Iteration to start adaptation (burn-in period).
+            epsilon: Small constant for numerical stability (ensures positive definiteness).
+        """
+        self.log_prob_fn = target_log_prob
+        self.current_point = np.array(start_point, dtype=float)
+        self.dim = len(start_point)
+        
+        # Initial state
+        self.current_log_prob = self.log_prob_fn(self.current_point)
+        self.chain = [self.current_point]
+        self.accepted_count = 0
+        
+        # Adaptation parameters
+        self.t0 = t0
+        self.epsilon = epsilon
+        # Optimal scaling factor for d-dimensional Gaussian
+        self.sd = (2.38 ** 2) / self.dim 
+        
+        # Recursive Covariance Statistics
+        self.mean = self.current_point.copy()
+        self.cov = np.eye(self.dim) * 0.1 # Initial covariance guess
+        
+    def _update_covariance(self, t: int, new_sample: np.ndarray):
+        """
+        Recursive update of the empirical covariance matrix.
+        Avoids recomputing covariance from the full history at every step.
+        """
+        # Standard recursive formula for mean and covariance
+        prev_mean = self.mean.copy()
+        self.mean = (t * prev_mean + new_sample) / (t + 1)
+        
+        # Update Covariance: C_t = ((t-1) * C_{t-1} + s_d * (x_t - mean_prev)(x_t - mean_new)^T) / t
+        # We perform the rank-1 update efficiently
+        diff_prev = (new_sample - prev_mean).reshape(-1, 1)
+        diff_new = (new_sample - self.mean).reshape(-1, 1)
+        
+        self.cov = (t - 1) / t * self.cov + (self.sd / t) * (diff_prev @ diff_new.T)
+
+    def sample(self, n_steps: int) -> Tuple[np.ndarray, float]:
+        """
+        Run the sampler for n_steps.
+        Returns: (chain, acceptance_rate)
+        """
+        # Start loop from current chain length
+        start_t = len(self.chain)
+        
+        for t in range(start_t, start_t + n_steps):
+            
+            # 1. Propose
+            if t <= self.t0:
+                # During burn-in, use fixed initial covariance (or small isotropic noise)
+                proposal_cov = np.eye(self.dim) * 0.01 
+            else:
+                # After burn-in, use learned covariance + small regularization
+                proposal_cov = self.cov + self.epsilon * np.eye(self.dim)
+            
+            proposal = np.random.multivariate_normal(self.current_point, proposal_cov)
+            
+            # 2. Evaluate
+            proposal_log_prob = self.log_prob_fn(proposal)
+            
+            # 3. Metropolis Step
+            if proposal_log_prob == -np.inf:
+                accept_ratio = -np.inf
+            else:
+                accept_ratio = proposal_log_prob - self.current_log_prob
+                
+            if np.log(np.random.rand()) < accept_ratio:
+                self.current_point = proposal
+                self.current_log_prob = proposal_log_prob
+                self.accepted_count += 1
+            
+            # 4. Store & Adapt
+            self.chain.append(self.current_point)
+            
+            # Update statistics for adaptation
+            self._update_covariance(len(self.chain), self.current_point)
+            
+        return np.array(self.chain), self.accepted_count / (len(self.chain) - 1)
 
 class Model:
     def __init__(self, beta: float, sigma_epsilon: float, physical_constants: Dict):
