@@ -477,8 +477,128 @@ def run_rmse_scaling_analysis():
     plt.close()
     print(f"Saved {OUTPUT_DIR}/presentation_location_convergence.png")
 
+def run_static_data_analysis():
+    print("Running Static Data Analysis (Dynamic Model on Static Data)...")
+    np.random.seed(42)
+    
+    # Setup
+    T, Nt, Nx, Lx = 1.0, 15, 15, 5.0
+    consts = {
+        'RHO_CH4': 0.656, 'U': 5.0,
+        'XS': [2.0], 'YS': [-2.0], 'ZS': 0, 'Z': 0,
+        'a_H': 1, 'b_H': 1, 'w': 1, 'a_V': 1, 'b_V': 1, 'h': 1,
+        'gamma_H': 1, 'gamma_V': 1,
+        'wa0': np.array([0.0, 4.0]), 'wa': [np.array([2.0, 0.0])], 'wb': [np.array([0.0, 1.0])]
+    }
+    
+    # STATIC Source: ak=0, bk=0
+    true_a0 = np.array([1.0])
+    true_ak = np.array([[0.0]])
+    true_bk = np.array([[0.0]])
+    
+    model = Model(beta=1.0, sigma_epsilon=0.1, physical_constants=consts)
+    data = model.gen_data(T, Nt, Nx, Lx, true_ak, true_bk, true_a0)
+    
+    # Pre-calculate winds
+    winds = wind_function(data['times'], consts['wa0'], consts['wa'], consts['wb'])
+    
+    # --- 1. Fit Dynamic Model ---
+    print("  Fitting Dynamic Model...")
+    initial_point = np.array([1.0, 0.1, 0.1, 2.0, -2.0]) # Start with slight variation
+    
+    def log_posterior_dyn(flat_coeff):
+        p_a0 = flat_coeff[0:1]
+        p_ak = flat_coeff[1:2].reshape(1,1)
+        p_bk = flat_coeff[2:3].reshape(1,1)
+        p_XS = flat_coeff[3:4]
+        p_YS = flat_coeff[4:5]
+        params = {'a0': p_a0, 'ak': p_ak, 'bk': p_bk, 'XS': p_XS, 'YS': p_YS}
+        lp = log_prior_coefficients([p_a0, p_ak, p_bk])
+        ll = model.log_likelihood(params, data, precomputed_winds=winds)
+        return lp + ll
+
+    sampler_dyn = AdaptiveMetropolis(log_posterior_dyn, initial_point, t0=1000)
+    chain_dyn, acc_dyn = sampler_dyn.sample(10000)
+    print(f"  Dynamic MCMC Acceptance: {acc_dyn:.3f}")
+    
+    burn_in = 2000
+    chain_dyn_burned = chain_dyn[burn_in:]
+    mean_dyn = np.mean(chain_dyn_burned, axis=0)
+    
+    # --- 2. Fit Static Model ---
+    print("  Fitting Static Model...")
+    def log_posterior_stat(flat_coeff):
+        p_a0 = flat_coeff[0:1]
+        p_XS = flat_coeff[1:2]
+        p_YS = flat_coeff[2:3]
+        params = {'a0': p_a0, 'XS': p_XS, 'YS': p_YS}
+        lp = -0.5 * np.sum(p_a0**2)
+        ll = model.log_likelihood(params, data, precomputed_winds=winds)
+        return lp + ll
+        
+    sampler_stat = AdaptiveMetropolis(log_posterior_stat, np.array([1.0, 2.0, -2.0]), t0=500)
+    chain_stat, acc_stat = sampler_stat.sample(5000)
+    print(f"  Static MCMC Acceptance: {acc_stat:.3f}")
+    
+    mean_stat = np.mean(chain_stat[1000:], axis=0)
+
+    # --- Plot 1: Source Recovery ---
+    print("  Generating Source Recovery Plot...")
+    t_plot = np.linspace(0, T, 100)
+    
+    # True Source (Static)
+    s_true = s_function(t_plot, true_ak, true_bk, true_a0).flatten()
+    
+    # Dynamic Estimate
+    s_dyn_samples = []
+    indices = np.random.choice(len(chain_dyn_burned), size=200, replace=False)
+    for idx in indices:
+        sample = chain_dyn_burned[idx]
+        s_t = s_function(t_plot, sample[1:2].reshape(1,1), sample[2:3].reshape(1,1), sample[0:1])
+        s_dyn_samples.append(s_t.flatten())
+    s_dyn_samples = np.array(s_dyn_samples)
+    s_dyn_mean = np.mean(s_dyn_samples, axis=0)
+    s_dyn_lower = np.percentile(s_dyn_samples, 2.5, axis=0)
+    s_dyn_upper = np.percentile(s_dyn_samples, 97.5, axis=0)
+    
+    # Static Estimate
+    s_stat_vals = s_function(t_plot, np.array([0.0]), np.array([0.0]), mean_stat[0:1]).flatten()
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(t_plot, s_true, 'k-', linewidth=2, label='True Source (Static)')
+    plt.plot(t_plot, s_dyn_mean, 'b--', linewidth=2, label='Dynamic Model Mean')
+    plt.fill_between(t_plot, s_dyn_lower, s_dyn_upper, color='blue', alpha=0.2, label='Dynamic 95% CI')
+    plt.plot(t_plot, s_stat_vals, 'r:', linewidth=3, label='Static Model')
+    plt.xlabel('Time')
+    plt.ylabel('Source Intensity s(t)')
+    plt.title('Recovery of Static Source by Dynamic Model')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_source_recovery.png'))
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/static_data_source_recovery.png")
+    
+    # --- Plot 2: Dynamic Parameters Chains ---
+    print("  Generating MCMC Chains Plot...")
+    plt.figure(figsize=(10, 10))
+    labels = ['a0', 'ak', 'bk', 'XS', 'YS']
+    true_vals = [true_a0[0], true_ak[0,0], true_bk[0,0], consts['XS'][0], consts['YS'][0]]
+    
+    for i in range(5):
+        plt.subplot(5, 1, i+1)
+        plt.plot(chain_dyn[:, i], label='Chain')
+        plt.axhline(true_vals[i], color='r', linestyle='--', label='True')
+        plt.ylabel(labels[i])
+        plt.legend()
+    plt.xlabel('Iteration')
+    plt.suptitle('Dynamic Model Chains on Static Data')
+    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_mcmc_chains.png'))
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/static_data_mcmc_chains.png")
+
 if __name__ == "__main__":
     run_constant_source_demo()
     run_varying_source_demo()
     run_inference_and_plots()
     run_rmse_scaling_analysis()
+    run_static_data_analysis()
