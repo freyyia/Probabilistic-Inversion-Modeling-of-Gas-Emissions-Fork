@@ -472,9 +472,9 @@ def run_rmse_scaling_analysis():
     dyn_x = [p[0] for p in est_locs_dyn]
     dyn_y = [p[1] for p in est_locs_dyn]
     
-    # Connect lines
-    plt.plot(stat_x, stat_y, 'r--', alpha=0.3)
-    plt.plot(dyn_x, dyn_y, 'b--', alpha=0.3)
+    # Connect lines - REMOVED as per request
+    # plt.plot(stat_x, stat_y, 'r--', alpha=0.3)
+    # plt.plot(dyn_x, dyn_y, 'b--', alpha=0.3)
     
     sensors = [n*n for n in grid_sizes]
     norm = plt.Normalize(min(sensors), max(sensors))
@@ -833,9 +833,6 @@ def run_static_rmse_scaling_analysis():
     stat_y = [p[1] for p in est_locs_static]
     dyn_x = [p[0] for p in est_locs_dyn]
     dyn_y = [p[1] for p in est_locs_dyn]
-    
-    plt.plot(stat_x, stat_y, 'r--', alpha=0.3)
-    plt.plot(dyn_x, dyn_y, 'b--', alpha=0.3)
     
     norm = plt.Normalize(min(sensors), max(sensors))
     
