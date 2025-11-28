@@ -179,6 +179,20 @@ def run_inference_and_plots():
     plt.savefig(os.path.join(OUTPUT_DIR, 'presentation_mcmc_chains.png'))
     plt.close()
     
+    # --- Fit Static Model (Moved up for Plot 2) ---
+    print("Fitting Static Model...")
+    def log_posterior_static(flat_coeff):
+        p_a0 = flat_coeff[0:1]
+        p_XS = flat_coeff[1:2]
+        p_YS = flat_coeff[2:3]
+        params = {'a0': p_a0, 'XS': p_XS, 'YS': p_YS} # ak, bk default to 0
+        lp = -0.5 * np.sum(p_a0**2) # Simple prior
+        ll = model.log_likelihood(params, data)
+        return lp + ll
+        
+    chain_static, _ = rwmh(np.array([0.5, 0.0, 0.0]), 0.05, 2000, log_posterior_static)
+    mean_static = np.mean(chain_static[500:], axis=0)
+
     # --- PLOT 2: 95% CI for Source Intensity ---
     print("Generating 95% CI Plot...")
     t_plot = np.linspace(0, T, 100)
@@ -191,18 +205,24 @@ def run_inference_and_plots():
         p_a0 = sample[0:1]
         p_ak = sample[1:2].reshape(1,1)
         p_bk = sample[2:3].reshape(1,1)
-        s_t = [s_function(t, p_ak, p_bk, p_a0)[0] for t in t_plot]
-        s_samples.append(s_t)
+        s_t = s_function(t_plot, p_ak, p_bk, p_a0)
+        # s_function returns (Nt, 1) here, flatten to (Nt,)
+        s_samples.append(s_t.flatten())
         
     s_samples = np.array(s_samples)
     s_mean = np.mean(s_samples, axis=0)
     s_lower = np.percentile(s_samples, 2.5, axis=0)
     s_upper = np.percentile(s_samples, 97.5, axis=0)
-    s_true = [s_function(t, true_ak, true_bk, true_a0)[0] for t in t_plot]
+    s_true = s_function(t_plot, true_ak, true_bk, true_a0).flatten()
+    
+    # Calculate Static Model Source
+    p_stat_a0 = mean_static[0:1]
+    s_static_vals = s_function(t_plot, np.array([0.0]), np.array([0.0]), p_stat_a0).flatten()
     
     plt.figure(figsize=(10, 6))
     plt.plot(t_plot, s_true, 'k-', linewidth=2, label='True Source')
-    plt.plot(t_plot, s_mean, 'b--', linewidth=2, label='Posterior Mean')
+    plt.plot(t_plot, s_mean, 'b--', linewidth=2, label='Posterior Mean (Dynamic)')
+    plt.plot(t_plot, s_static_vals, 'r:', linewidth=3, label='Static Model')
     plt.fill_between(t_plot, s_lower, s_upper, color='blue', alpha=0.2, label='95% CI')
     plt.xlabel('Time')
     plt.ylabel('Source Intensity s(t)')
@@ -214,18 +234,7 @@ def run_inference_and_plots():
     
     # --- PLOT 3: Ghost Residuals (Static vs Dynamic) ---
     print("Generating Ghost Residuals Plot...")
-    # Fit Static Model (a0, XS, YS only)
-    def log_posterior_static(flat_coeff):
-        p_a0 = flat_coeff[0:1]
-        p_XS = flat_coeff[1:2]
-        p_YS = flat_coeff[2:3]
-        params = {'a0': p_a0, 'XS': p_XS, 'YS': p_YS} # ak, bk default to 0
-        lp = -0.5 * np.sum(p_a0**2) # Simple prior
-        ll = model.log_likelihood(params, data)
-        return lp + ll
-        
-    chain_static, _ = rwmh(np.array([0.5, 0.0, 0.0]), 0.05, 2000, log_posterior_static)
-    mean_static = np.mean(chain_static[500:], axis=0)
+    # Static model already fitted above (mean_static)
     
     # Find max emission time
     idx_max = np.argmax(data['true_s'])
@@ -241,7 +250,7 @@ def run_inference_and_plots():
     consts_stat['YS'] = p_stat_YS
     wind_max = wind_function(t_max, consts['wa0'], consts['wa'], consts['wb'])
     A_stat = A_matrix(data['X_flat'], data['Y_flat'], consts_stat, wind_vector=wind_max)
-    s_stat = s_function(t_max, [0], [0], p_stat_a0)
+    s_stat = s_function(t_max, np.array([0.0]), np.array([0.0]), p_stat_a0)
     mu_stat = (np.dot(s_stat, A_stat) + 1.0).reshape(Nx, Nx)
     
     # Reconstruct Dynamic (using mean_params from earlier)
