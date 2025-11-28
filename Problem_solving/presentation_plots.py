@@ -28,6 +28,10 @@ except ImportError:
 # ==========================================
 
 def run_constant_source_demo():
+    """
+    Generates a demo of the plume evolution for a constant source.
+    Produces a snapshot image and an animation.
+    """
     print("Generating Constant Source Demo...")
     T, Nt, Nx, Lx = 1.0, 20, 30, 5.0
     consts = {
@@ -69,6 +73,10 @@ def run_constant_source_demo():
 
 
 def run_varying_source_demo():
+    """
+    Generates a demo of the plume evolution for multiple time-varying sources.
+    Produces a snapshot image and an animation.
+    """
     print("Generating Varying Source Demo (Multiple Sources)...")
     T, Nt, Nx, Lx = 1.0, 20, 30, 5.0
     consts = {
@@ -110,6 +118,10 @@ def run_varying_source_demo():
 
 
 def run_inference_and_plots():
+    """
+    Runs MCMC inference on dynamically generated data and produces analysis plots.
+    Plots include: MCMC chains, Source Intensity CI, Ghost Residuals, and Side-by-Side Comparison.
+    """
     print("Running Inference and Generating Plots...")
     np.random.seed(42)
     
@@ -240,7 +252,7 @@ def run_inference_and_plots():
     plt.fill_between(t_plot, s_lower, s_upper, color='blue', alpha=0.2, label='95% CI')
     plt.xlabel('Time')
     plt.ylabel('Source Intensity s(t)')
-    plt.title('Posterior Source Intensity with 95% CI')
+    plt.title(f'Posterior Source Intensity with 95% CI (Sensors: {Nx}x{Nx}={Nx*Nx})')
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.savefig(os.path.join(OUTPUT_DIR, 'presentation_source_ci.png'))
@@ -348,6 +360,10 @@ def run_inference_and_plots():
 
 
 def run_rmse_scaling_analysis():
+    """
+    Performs RMSE scaling analysis for DYNAMIC data as a function of sensor count.
+    Generates plots for Intensity RMSE, Location Error, and Spatial Convergence.
+    """
     print("Running RMSE Scaling Analysis (Varying Sensors)...")
     np.random.seed(42)
     grid_sizes = [2, 3, 4, 5, 6]
@@ -506,6 +522,11 @@ def run_rmse_scaling_analysis():
 
 
 def run_static_data_analysis():
+    """
+    Runs MCMC inference on data generated from a STATIC source with CONSTANT wind.
+    This verifies if the dynamic model can correctly recover a static source.
+    Plots include: Source Recovery (with CI), MCMC Chains, Side-by-Side Comparison (Snapshot & GIF).
+    """
     print("Running Static Data Analysis (Dynamic Model on Static Data)...")
     np.random.seed(42)
     
@@ -617,7 +638,7 @@ def run_static_data_analysis():
     
     plt.xlabel('Time')
     plt.ylabel('Source Intensity s(t)')
-    plt.title('Recovery of Static Source (Constant Wind)')
+    plt.title(f'Recovery of Static Source (Constant Wind, Sensors: {Nx}x{Nx}={Nx*Nx})')
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_source_recovery.png'))
@@ -679,8 +700,38 @@ def run_static_data_analysis():
     plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_comparison.png'))
     plt.close()
     print(f"Saved {OUTPUT_DIR}/static_data_comparison.png")
+    
+    # --- Plot 4: Side-by-Side Animation (GIF) ---
+    print("  Generating Side-by-Side Animation (GIF)...")
+    # Reconstruct full dynamic model data for animation
+    model_dyn = Model(1.0, 0.1, consts_dyn)
+    data_dyn = model_dyn.gen_data(T, Nt, Nx, Lx, p_dyn_ak, p_dyn_bk, p_dyn_a0)
+    
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    
+    def update_static_comparison(frame):
+        axes[0].clear()
+        axes[1].clear()
+        
+        # True Data (Static)
+        axes[0].contourf(data['X1'], data['X2'], data['Y'][frame].reshape(Nx, Nx), levels=20, cmap='viridis')
+        axes[0].set_title(f"True Data (t={data['times'][frame]:.2f})")
+        
+        # Recovered Data (Dynamic Mean)
+        axes[1].contourf(data_dyn['X1'], data_dyn['X2'], data_dyn['Y'][frame].reshape(Nx, Nx), levels=20, cmap='viridis')
+        axes[1].set_title(f"Recovered Model (t={data['times'][frame]:.2f})")
+        
+        return axes
+        
+    ani = animation.FuncAnimation(fig, update_static_comparison, frames=Nt, interval=200)
+    ani.save(os.path.join(OUTPUT_DIR, 'static_data_comparison.gif'), writer='pillow')
+    print(f"Saved {OUTPUT_DIR}/static_data_comparison.gif")
 
 def run_static_rmse_scaling_analysis():
+    """
+    Performs RMSE scaling analysis for STATIC data as a function of sensor count.
+    Generates plots for Intensity RMSE, Location Error, and Spatial Convergence.
+    """
     print("Running Static RMSE Scaling Analysis (Static Data)...")
     np.random.seed(42)
     grid_sizes = [2, 3, 4, 5, 6]
