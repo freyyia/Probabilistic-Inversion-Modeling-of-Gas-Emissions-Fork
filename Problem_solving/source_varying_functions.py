@@ -146,6 +146,11 @@ def A_matrix(x_sensor: np.ndarray, y_sensor: np.ndarray, constants: Dict, wind_v
     dy = dy[None, :, :]
     
     # u_vec: (Nt, 2) -> (Nt, 1, 1, 2) components
+    # Broadcasting explanation:
+    # We want to operate on every combination of Time (Nt), Source (N_sources), and Pixel (N_pixels).
+    # u_vec has shape (Nt, 2). We add axes for Source and Pixel to make it (Nt, 1, 1, 2).
+    # dx has shape (1, N_sources, N_pixels).
+    # When we multiply, NumPy broadcasts them to (Nt, N_sources, N_pixels).
     ux = u_vec[:, 0][:, None, None]
     uy = u_vec[:, 1][:, None, None]
     
@@ -344,7 +349,10 @@ class AdaptiveMetropolis:
             self.chain.append(self.current_point)
             
             # Update statistics for adaptation
-            self._update_covariance(len(self.chain), self.current_point)
+            # Use len(self.chain) - 1 because self.chain includes the initial point
+            # and we want the count of 'samples' added to the mean.
+            # If chain has 2 items (init + 1 sample), we want t=1.
+            self._update_covariance(len(self.chain) - 1, self.current_point)
             
         return np.array(self.chain), self.accepted_count / (len(self.chain) - 1)
 
@@ -390,7 +398,7 @@ class Model:
             'X_flat': X_flat, 'Y_flat': Y_flat
         }
 
-    def log_likelihood(self, params_dict: Dict, data: Dict) -> float:
+    def log_likelihood(self, params_dict: Dict, data: Dict, precomputed_winds: Optional[np.ndarray] = None) -> float:
         Y_obs = data['Y'] # (Nt, N_pixels)
         times = data['times']
         X1_f, X2_f = data['X_flat'], data['Y_flat']
@@ -413,7 +421,10 @@ class Model:
         
         # Vectorized calculation
         # 1. Winds (Nt, 2)
-        winds = wind_function(times, current_consts['wa0'], current_consts['wa'], current_consts['wb'])
+        if precomputed_winds is not None:
+            winds = precomputed_winds
+        else:
+            winds = wind_function(times, current_consts['wa0'], current_consts['wa'], current_consts['wb'])
         
         # 2. A matrix (Nt, N_sources, N_pixels)
         A = A_matrix(X1_f, X2_f, current_consts, wind_vector=winds)

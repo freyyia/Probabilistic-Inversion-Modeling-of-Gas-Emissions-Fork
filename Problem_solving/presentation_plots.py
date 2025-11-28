@@ -134,6 +134,12 @@ def run_inference_and_plots():
     # Parameters: a0, ak, bk, XS, YS (5 params)
     # Flattened: [a0, ak, bk, XS, YS]
     
+    # Initial point near truth
+    initial_point = np.array([1.0, 1.0, 0.0, 2.0, -2.0])
+    
+    # Pre-calculate winds for efficiency
+    winds = wind_function(data['times'], consts['wa0'], consts['wa'], consts['wb'])
+    
     def log_posterior(flat_coeff):
         # Unpack
         p_a0 = flat_coeff[0:1]
@@ -148,13 +154,10 @@ def run_inference_and_plots():
         lp_coeff = log_prior_coefficients([p_a0, p_ak, p_bk])
         
         # Likelihood
-        ll = model.log_likelihood(params, data)
+        ll = model.log_likelihood(params, data, precomputed_winds=winds)
         
         return lp_coeff + ll
 
-    # Initial point near truth
-    initial_point = np.array([1.0, 1.0, 0.0, 2.0, -2.0])
-    
     print("Running Adaptive MCMC...")
     sampler = AdaptiveMetropolis(
         target_log_prob=log_posterior,
@@ -193,7 +196,7 @@ def run_inference_and_plots():
         p_YS = flat_coeff[2:3]
         params = {'a0': p_a0, 'XS': p_XS, 'YS': p_YS} # ak, bk default to 0
         lp = -0.5 * np.sum(p_a0**2) # Simple prior
-        ll = model.log_likelihood(params, data)
+        ll = model.log_likelihood(params, data, precomputed_winds=winds)
         return lp + ll
         
     sampler_static = AdaptiveMetropolis(
@@ -348,9 +351,12 @@ def run_rmse_scaling_analysis():
         print(f"  Grid {Nx}x{Nx}...")
         data = model.gen_data(T, Nt, Nx, Lx, np.array(true_ak), np.array(true_bk), np.array(true_a0))
         
+        # Pre-calculate winds
+        winds = wind_function(data['times'], consts['wa0'], consts['wa'], consts['wb'])
+        
         # Static
         def lp_stat(fc):
-            return -0.5*np.sum(fc[0]**2) + model.log_likelihood({'a0':fc[0:1], 'XS':fc[1:2], 'YS':fc[2:3]}, data)
+            return -0.5*np.sum(fc[0]**2) + model.log_likelihood({'a0':fc[0:1], 'XS':fc[1:2], 'YS':fc[2:3]}, data, precomputed_winds=winds)
         
         sampler_stat = AdaptiveMetropolis(lp_stat, np.array([0.5, 0.0, 0.0]), t0=200)
         chain_stat, _ = sampler_stat.sample(1000)
@@ -359,7 +365,7 @@ def run_rmse_scaling_analysis():
         # Dynamic
         def lp_dyn(fc):
              p = {'a0':fc[0:1], 'ak':fc[1:2].reshape(1,1), 'bk':fc[2:3].reshape(1,1), 'XS':fc[3:4], 'YS':fc[4:5]}
-             return log_prior_coefficients([p['a0'], p['ak'], p['bk']]) + model.log_likelihood(p, data)
+             return log_prior_coefficients([p['a0'], p['ak'], p['bk']]) + model.log_likelihood(p, data, precomputed_winds=winds)
         
         sampler_dyn = AdaptiveMetropolis(lp_dyn, np.array([1.0, 1.0, 0.0, 2.0, -2.0]), t0=200)
         chain_dyn, _ = sampler_dyn.sample(1000)
