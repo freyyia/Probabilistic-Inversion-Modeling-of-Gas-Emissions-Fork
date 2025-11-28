@@ -318,6 +318,33 @@ def run_inference_and_plots():
     ani = animation.FuncAnimation(fig, update_side_by_side, frames=Nt, interval=200)
     ani.save(os.path.join(OUTPUT_DIR, 'presentation_comparison.gif'), writer='pillow')
     print(f"Saved {OUTPUT_DIR}/presentation_comparison.gif")
+    
+    # --- PLOT 5: Side-by-Side Comparison (Snapshot) ---
+    print("Generating Side-by-Side Comparison (Dynamic Data)...")
+    # Use max emission time for snapshot
+    t_snap = t_max
+    wind_snap = wind_function(t_snap, consts['wa0'], consts['wa'], consts['wb'])
+    
+    # True Data
+    A_true = A_matrix(data['X_flat'], data['Y_flat'], consts, wind_vector=wind_snap)
+    s_true_val = s_function(t_snap, true_ak, true_bk, true_a0)
+    mu_true = (np.dot(s_true_val, A_true) + 1.0).reshape(Nx, Nx)
+    
+    # Dynamic Model Mean
+    A_dyn = A_matrix(data['X_flat'], data['Y_flat'], consts_dyn, wind_vector=wind_snap)
+    s_dyn_val = s_function(t_snap, p_dyn_ak, p_dyn_bk, p_dyn_a0)
+    mu_dyn_snap = (np.dot(s_dyn_val, A_dyn) + 1.0).reshape(Nx, Nx)
+    
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    vmax = max(np.max(mu_true), np.max(mu_dyn_snap))
+    im1 = axes[0].contourf(data['X1'], data['X2'], mu_true, levels=20, cmap='viridis', vmin=0, vmax=vmax)
+    axes[0].set_title("True Data (Dynamic Source)")
+    im2 = axes[1].contourf(data['X1'], data['X2'], mu_dyn_snap, levels=20, cmap='viridis', vmin=0, vmax=vmax)
+    axes[1].set_title("Recovered Model (Dynamic Mean)")
+    plt.colorbar(im1, ax=axes.ravel().tolist())
+    plt.savefig(os.path.join(OUTPUT_DIR, 'dynamic_data_comparison.png'))
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/dynamic_data_comparison.png")
 
 
 def run_rmse_scaling_analysis():
@@ -477,6 +504,7 @@ def run_rmse_scaling_analysis():
     plt.close()
     print(f"Saved {OUTPUT_DIR}/presentation_location_convergence.png")
 
+
 def run_static_data_analysis():
     print("Running Static Data Analysis (Dynamic Model on Static Data)...")
     np.random.seed(42)
@@ -488,7 +516,8 @@ def run_static_data_analysis():
         'XS': [2.0], 'YS': [-2.0], 'ZS': 0, 'Z': 0,
         'a_H': 1, 'b_H': 1, 'w': 1, 'a_V': 1, 'b_V': 1, 'h': 1,
         'gamma_H': 1, 'gamma_V': 1,
-        'wa0': np.array([0.0, 4.0]), 'wa': [np.array([2.0, 0.0])], 'wb': [np.array([0.0, 1.0])]
+        # CONSTANT WIND for Static Analysis
+        'wa0': np.array([0.0, 4.0]), 'wa': [np.array([0.0, 0.0])], 'wb': [np.array([0.0, 0.0])]
     }
     
     # STATIC Source: ak=0, bk=0
@@ -540,7 +569,8 @@ def run_static_data_analysis():
     chain_stat, acc_stat = sampler_stat.sample(5000)
     print(f"  Static MCMC Acceptance: {acc_stat:.3f}")
     
-    mean_stat = np.mean(chain_stat[1000:], axis=0)
+    chain_stat_burned = chain_stat[1000:]
+    mean_stat = np.mean(chain_stat_burned, axis=0)
 
     # --- Plot 1: Source Recovery ---
     print("  Generating Source Recovery Plot...")
@@ -561,17 +591,33 @@ def run_static_data_analysis():
     s_dyn_lower = np.percentile(s_dyn_samples, 2.5, axis=0)
     s_dyn_upper = np.percentile(s_dyn_samples, 97.5, axis=0)
     
-    # Static Estimate
-    s_stat_vals = s_function(t_plot, np.array([0.0]), np.array([0.0]), mean_stat[0:1]).flatten()
+    # Static Estimate & CI
+    s_stat_samples = []
+    indices_stat = np.random.choice(len(chain_stat_burned), size=200, replace=False)
+    for idx in indices_stat:
+        sample = chain_stat_burned[idx]
+        # Static model: ak=0, bk=0
+        s_t = s_function(t_plot, np.array([[0.0]]), np.array([[0.0]]), sample[0:1])
+        s_stat_samples.append(s_t.flatten())
+    s_stat_samples = np.array(s_stat_samples)
+    s_stat_mean = np.mean(s_stat_samples, axis=0)
+    s_stat_lower = np.percentile(s_stat_samples, 2.5, axis=0)
+    s_stat_upper = np.percentile(s_stat_samples, 97.5, axis=0)
     
     plt.figure(figsize=(10, 6))
     plt.plot(t_plot, s_true, 'k-', linewidth=2, label='True Source (Static)')
+    
+    # Dynamic
     plt.plot(t_plot, s_dyn_mean, 'b--', linewidth=2, label='Dynamic Model Mean')
     plt.fill_between(t_plot, s_dyn_lower, s_dyn_upper, color='blue', alpha=0.2, label='Dynamic 95% CI')
-    plt.plot(t_plot, s_stat_vals, 'r:', linewidth=3, label='Static Model')
+    
+    # Static
+    plt.plot(t_plot, s_stat_mean, 'r:', linewidth=3, label='Static Model Mean')
+    plt.fill_between(t_plot, s_stat_lower, s_stat_upper, color='red', alpha=0.2, label='Static 95% CI')
+    
     plt.xlabel('Time')
     plt.ylabel('Source Intensity s(t)')
-    plt.title('Recovery of Static Source by Dynamic Model')
+    plt.title('Recovery of Static Source (Constant Wind)')
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_source_recovery.png'))
@@ -595,6 +641,187 @@ def run_static_data_analysis():
     plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_mcmc_chains.png'))
     plt.close()
     print(f"Saved {OUTPUT_DIR}/static_data_mcmc_chains.png")
+    
+    # --- Plot 3: Side-by-Side Comparison (Snapshot) ---
+    print("  Generating Side-by-Side Comparison...")
+    # Reconstruct Dynamic Model Mean
+    p_dyn_a0 = mean_dyn[0:1]
+    p_dyn_ak = mean_dyn[1:2].reshape(1,1)
+    p_dyn_bk = mean_dyn[2:3].reshape(1,1)
+    p_dyn_XS = mean_dyn[3:4]
+    p_dyn_YS = mean_dyn[4:5]
+    
+    consts_dyn = consts.copy()
+    consts_dyn['XS'] = p_dyn_XS
+    consts_dyn['YS'] = p_dyn_YS
+    
+    # Use max time for snapshot
+    t_snap = T
+    wind_snap = wind_function(t_snap, consts['wa0'], consts['wa'], consts['wb'])
+    
+    # True Data (Static)
+    A_true = A_matrix(data['X_flat'], data['Y_flat'], consts, wind_vector=wind_snap)
+    s_true_val = s_function(t_snap, true_ak, true_bk, true_a0)
+    mu_true = (np.dot(s_true_val, A_true) + 1.0).reshape(Nx, Nx)
+    
+    # Dynamic Model Mean
+    A_dyn = A_matrix(data['X_flat'], data['Y_flat'], consts_dyn, wind_vector=wind_snap)
+    s_dyn_val = s_function(t_snap, p_dyn_ak, p_dyn_bk, p_dyn_a0)
+    mu_dyn = (np.dot(s_dyn_val, A_dyn) + 1.0).reshape(Nx, Nx)
+    
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    vmax = max(np.max(mu_true), np.max(mu_dyn))
+    im1 = axes[0].contourf(data['X1'], data['X2'], mu_true, levels=20, cmap='viridis', vmin=0, vmax=vmax)
+    axes[0].set_title("True Data (Static Source)")
+    im2 = axes[1].contourf(data['X1'], data['X2'], mu_dyn, levels=20, cmap='viridis', vmin=0, vmax=vmax)
+    axes[1].set_title("Recovered Model (Dynamic Mean)")
+    plt.colorbar(im1, ax=axes.ravel().tolist())
+    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_comparison.png'))
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/static_data_comparison.png")
+
+def run_static_rmse_scaling_analysis():
+    print("Running Static RMSE Scaling Analysis (Static Data)...")
+    np.random.seed(42)
+    grid_sizes = [2, 3, 4, 5, 6]
+    
+    rmse_intensity_static = []
+    rmse_intensity_dyn = []
+    rmse_loc_static = []
+    rmse_loc_dyn = []
+    
+    est_locs_static = []
+    est_locs_dyn = []
+    
+    T, Nt, Lx = 1.0, 10, 5.0
+    consts = {
+        'RHO_CH4': 0.656, 'U': 5.0,
+        'XS': [2.0], 'YS': [-2.0], 'ZS': 0, 'Z': 0,
+        'a_H': 1, 'b_H': 1, 'w': 1, 'a_V': 1, 'b_V': 1, 'h': 1,
+        'gamma_H': 1, 'gamma_V': 1,
+        # CONSTANT WIND for Static Analysis
+        'wa0': np.array([0.0, 4.0]), 'wa': [np.array([0.0, 0.0])], 'wb': [np.array([0.0, 0.0])]
+    }
+    # Static Source
+    true_a0 = np.array([1.0])
+    true_ak = np.array([[0.0]])
+    true_bk = np.array([[0.0]])
+    true_loc = np.array([consts['XS'][0], consts['YS'][0]])
+    
+    model = Model(beta=1.0, sigma_epsilon=0.1, physical_constants=consts)
+    
+    for Nx in grid_sizes:
+        print(f"  Grid {Nx}x{Nx}...")
+        data = model.gen_data(T, Nt, Nx, Lx, true_ak, true_bk, true_a0)
+        winds = wind_function(data['times'], consts['wa0'], consts['wa'], consts['wb'])
+        
+        # Static Model Fit
+        def lp_stat(fc):
+            return -0.5*np.sum(fc[0]**2) + model.log_likelihood({'a0':fc[0:1], 'XS':fc[1:2], 'YS':fc[2:3]}, data, precomputed_winds=winds)
+        
+        sampler_stat = AdaptiveMetropolis(lp_stat, np.array([0.5, 0.0, 0.0]), t0=200)
+        chain_stat, _ = sampler_stat.sample(1000)
+        mean_stat = np.mean(chain_stat[500:], axis=0)
+        
+        # Dynamic Model Fit
+        def lp_dyn(fc):
+             p = {'a0':fc[0:1], 'ak':fc[1:2].reshape(1,1), 'bk':fc[2:3].reshape(1,1), 'XS':fc[3:4], 'YS':fc[4:5]}
+             return log_prior_coefficients([p['a0'], p['ak'], p['bk']]) + model.log_likelihood(p, data, precomputed_winds=winds)
+        
+        sampler_dyn = AdaptiveMetropolis(lp_dyn, np.array([1.0, 0.1, 0.1, 2.0, -2.0]), t0=200)
+        chain_dyn, _ = sampler_dyn.sample(1000)
+        mean_dyn = np.mean(chain_dyn[500:], axis=0)
+        
+        # Metrics
+        t_eval = np.linspace(0, T, 50)
+        s_true = np.array([s_function(t, true_ak, true_bk, true_a0)[0] for t in t_eval])
+        s_stat = np.array([s_function(t, [0], [0], [mean_stat[0]])[0] for t in t_eval])
+        s_dyn = np.array([s_function(t, [mean_dyn[1]], [mean_dyn[2]], [mean_dyn[0]])[0] for t in t_eval])
+        
+        rmse_intensity_static.append(np.sqrt(np.mean((s_true - s_stat)**2)))
+        rmse_intensity_dyn.append(np.sqrt(np.mean((s_true - s_dyn)**2)))
+        
+        loc_stat = mean_stat[1:3]
+        loc_dyn = mean_dyn[3:5]
+        rmse_loc_static.append(np.linalg.norm(loc_stat - true_loc))
+        rmse_loc_dyn.append(np.linalg.norm(loc_dyn - true_loc))
+        
+        est_locs_static.append(loc_stat)
+        est_locs_dyn.append(loc_dyn)
+        
+    # Plotting RMSE
+    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    sensors = [n*n for n in grid_sizes]
+    
+    axes[0].plot(sensors, rmse_intensity_static, 'r--o', label='Static Model')
+    axes[0].plot(sensors, rmse_intensity_dyn, 'b-o', label='Dynamic Model')
+    axes[0].set_xlabel('Number of Sensors')
+    axes[0].set_ylabel('RMSE (Source Intensity)')
+    axes[0].set_title('Static Data: Intensity Recovery')
+    axes[0].legend()
+    axes[0].grid(True)
+    
+    axes[1].plot(sensors, rmse_loc_static, 'r--o', label='Static Model')
+    axes[1].plot(sensors, rmse_loc_dyn, 'b-o', label='Dynamic Model')
+    axes[1].set_xlabel('Number of Sensors')
+    axes[1].set_ylabel('Location Error (m)')
+    axes[1].set_title('Static Data: Location Error')
+    axes[1].legend()
+    axes[1].grid(True)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_rmse_scaling.png'))
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/static_data_rmse_scaling.png")
+    
+    # Plotting Convergence
+    plt.figure(figsize=(10, 10))
+    plt.plot(true_loc[0], true_loc[1], 'k*', markersize=20, label='True Source')
+    
+    stat_x = [p[0] for p in est_locs_static]
+    stat_y = [p[1] for p in est_locs_static]
+    dyn_x = [p[0] for p in est_locs_dyn]
+    dyn_y = [p[1] for p in est_locs_dyn]
+    
+    plt.plot(stat_x, stat_y, 'r--', alpha=0.3)
+    plt.plot(dyn_x, dyn_y, 'b--', alpha=0.3)
+    
+    norm = plt.Normalize(min(sensors), max(sensors))
+    
+    for i, (x, y) in enumerate(zip(stat_x, stat_y)):
+        n_s = sensors[i]
+        color = plt.cm.Reds(norm(n_s))
+        plt.scatter(x, y, s=150, edgecolors=color, facecolors='none', linewidths=2, zorder=3)
+        plt.annotate(f"{n_s}", (x, y), xytext=(-15, 10), textcoords='offset points', fontsize=10, color='darkred')
+        
+    for i, (x, y) in enumerate(zip(dyn_x, dyn_y)):
+        n_s = sensors[i]
+        color = plt.cm.Blues(norm(n_s))
+        plt.scatter(x, y, s=150, facecolors=color, edgecolors='k', zorder=3)
+        plt.annotate(f"{n_s}", (x, y), xytext=(5, 10), textcoords='offset points', fontsize=10, color='darkblue')
+
+    from matplotlib.lines import Line2D
+    legend_elements = [
+        Line2D([0], [0], marker='*', color='w', markerfacecolor='k', markersize=15, label='True Source'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='none', markeredgecolor='r', markersize=10, markeredgewidth=2, label='Static (Empty)'),
+        Line2D([0], [0], marker='o', color='w', markerfacecolor='b', markeredgecolor='k', markersize=10, label='Dynamic (Filled)')
+    ]
+    
+    plt.title(f"Static Data: Localization Convergence\n(Labels = Number of Sensors)", fontsize=14)
+    plt.xlabel("X Coordinate (m)")
+    plt.ylabel("Y Coordinate (m)")
+    plt.grid(True, linestyle=':', alpha=0.6)
+    plt.legend(handles=legend_elements, loc='upper right')
+    plt.axis('equal')
+    
+    all_x = stat_x + dyn_x + [true_loc[0]]
+    all_y = stat_y + dyn_y + [true_loc[1]]
+    plt.xlim(min(all_x)-1, max(all_x)+1)
+    plt.ylim(min(all_y)-1, max(all_y)+1)
+    
+    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_location_convergence.png'), dpi=300)
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/static_data_location_convergence.png")
 
 if __name__ == "__main__":
     run_constant_source_demo()
@@ -602,3 +829,4 @@ if __name__ == "__main__":
     run_inference_and_plots()
     run_rmse_scaling_analysis()
     run_static_data_analysis()
+    run_static_rmse_scaling_analysis()
