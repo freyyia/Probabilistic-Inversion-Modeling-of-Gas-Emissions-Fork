@@ -117,6 +117,51 @@ def run_varying_source_demo():
     print(f"Saved {OUTPUT_DIR}/demo_varying_source.gif")
 
 
+def run_sensor_location_demo():
+    """
+    Generates a plot showing the sensor locations for different grid sizes (2x2 to 6x6).
+    Colors the sensors based on the grid size to visualize the increasing density.
+    """
+    print("Generating Sensor Location Demo...")
+    Lx = 5.0
+    grid_sizes = [2, 3, 4, 5, 6]
+    
+    plt.figure(figsize=(10, 8))
+    
+    # Use a colormap
+    cmap = plt.cm.viridis
+    norm = plt.Normalize(min(grid_sizes), max(grid_sizes))
+    
+    # Plot from largest to smallest so smaller grids (if overlapping) are on top?
+    # Actually, let's plot all. Zorder helps.
+    
+    for Nx in grid_sizes:
+        x = np.linspace(0, Lx, Nx)
+        y = np.linspace(0, Lx, Nx)
+        X1, X2 = np.meshgrid(x, y)
+        X_flat = X1.flatten()
+        Y_flat = X2.flatten()
+        
+        color = cmap(norm(Nx))
+        label = f"{Nx}x{Nx} = {Nx*Nx} Sensors"
+        
+        # Zorder: smaller grids on top
+        zorder = 10 - Nx
+        
+        plt.scatter(X_flat, Y_flat, label=label, color=color, s=100, alpha=0.8, edgecolors='k', zorder=zorder)
+
+    plt.title("Sensor Locations for Different Grid Sizes")
+    plt.xlabel("X Coordinate (m)")
+    plt.ylabel("Y Coordinate (m)")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.grid(True, linestyle=':', alpha=0.5)
+    plt.axis('equal')
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, 'presentation_sensor_locations.png'))
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/presentation_sensor_locations.png")
+
+
 def run_inference_and_plots():
     """
     Runs MCMC inference on dynamically generated data and produces analysis plots.
@@ -126,7 +171,8 @@ def run_inference_and_plots():
     np.random.seed(42)
     
     # Setup
-    T, Nt, Nx, Lx = 1.0, 15, 15, 5.0
+    # INCREASED Nx to 30 for smoother plots
+    T, Nt, Nx, Lx = 1.0, 15, 30, 5.0
     consts = {
         'RHO_CH4': 0.656, 'U': 5.0,
         'XS': [2.0], 'YS': [-2.0], 'ZS': 0, 'Z': 0,
@@ -185,18 +231,23 @@ def run_inference_and_plots():
     mean_params = np.mean(chain_burned, axis=0)
     
     # --- PLOT 1: MCMC Chains ---
-    plt.figure(figsize=(10, 12))
+    fig, axes = plt.subplots(3, 2, figsize=(12, 10))
+    axes = axes.flatten()
     labels = ['a0', 'ak', 'bk', 'XS', 'YS']
     true_vals = [true_a0[0], true_ak[0,0], true_bk[0,0], consts['XS'][0], consts['YS'][0]]
     
     for i in range(5):
-        plt.subplot(5, 1, i+1)
-        plt.plot(chain[:, i], label='Chain')
-        plt.axhline(true_vals[i], color='r', linestyle='--', label='True')
-        plt.ylabel(labels[i])
-        plt.legend()
-    plt.xlabel('Iteration')
+        axes[i].plot(chain[:, i], label='Chain')
+        axes[i].axhline(true_vals[i], color='r', linestyle='--', label='True')
+        axes[i].set_ylabel(labels[i])
+        axes[i].legend()
+        axes[i].set_xlabel('Iteration')
+        
+    # Hide the 6th subplot
+    axes[5].axis('off')
+    
     plt.suptitle('MCMC Chains')
+    plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, 'presentation_mcmc_chains.png'))
     plt.close()
     
@@ -358,6 +409,218 @@ def run_inference_and_plots():
     plt.close()
     print(f"Saved {OUTPUT_DIR}/dynamic_data_comparison.png")
 
+
+def run_static_data_analysis():
+    """
+    Runs MCMC inference on data generated from a STATIC source with CONSTANT wind.
+    This verifies if the dynamic model can correctly recover a static source.
+    Plots include: Source Recovery (with CI), MCMC Chains, Side-by-Side Comparison (Snapshot & GIF).
+    """
+    print("Running Static Data Analysis (Dynamic Model on Static Data)...")
+    np.random.seed(42)
+    
+    # Setup
+    # INCREASED Nx to 30 for smoother plots
+    T, Nt, Nx, Lx = 1.0, 15, 30, 5.0
+    consts = {
+        'RHO_CH4': 0.656, 'U': 5.0,
+        'XS': [2.0], 'YS': [-2.0], 'ZS': 0, 'Z': 0,
+        'a_H': 1, 'b_H': 1, 'w': 1, 'a_V': 1, 'b_V': 1, 'h': 1,
+        'gamma_H': 1, 'gamma_V': 1,
+        # CONSTANT WIND for Static Analysis
+        'wa0': np.array([0.0, 4.0]), 'wa': [np.array([0.0, 0.0])], 'wb': [np.array([0.0, 0.0])]
+    }
+    
+    # STATIC Source: ak=0, bk=0
+    true_a0 = np.array([1.0])
+    true_ak = np.array([[0.0]])
+    true_bk = np.array([[0.0]])
+    
+    model = Model(beta=1.0, sigma_epsilon=0.1, physical_constants=consts)
+    data = model.gen_data(T, Nt, Nx, Lx, true_ak, true_bk, true_a0)
+    
+    # Pre-calculate winds
+    winds = wind_function(data['times'], consts['wa0'], consts['wa'], consts['wb'])
+    
+    # --- 1. Fit Dynamic Model ---
+    print("  Fitting Dynamic Model...")
+    initial_point = np.array([1.0, 0.1, 0.1, 2.0, -2.0]) # Start with slight variation
+    
+    def log_posterior_dyn(flat_coeff):
+        p_a0 = flat_coeff[0:1]
+        p_ak = flat_coeff[1:2].reshape(1,1)
+        p_bk = flat_coeff[2:3].reshape(1,1)
+        p_XS = flat_coeff[3:4]
+        p_YS = flat_coeff[4:5]
+        params = {'a0': p_a0, 'ak': p_ak, 'bk': p_bk, 'XS': p_XS, 'YS': p_YS}
+        lp = log_prior_coefficients([p_a0, p_ak, p_bk])
+        ll = model.log_likelihood(params, data, precomputed_winds=winds)
+        return lp + ll
+
+    sampler_dyn = AdaptiveMetropolis(log_posterior_dyn, initial_point, t0=1000)
+    chain_dyn, acc_dyn = sampler_dyn.sample(10000)
+    print(f"  Dynamic MCMC Acceptance: {acc_dyn:.3f}")
+    
+    burn_in = 2000
+    chain_dyn_burned = chain_dyn[burn_in:]
+    mean_dyn = np.mean(chain_dyn_burned, axis=0)
+    
+    # --- 2. Fit Static Model ---
+    print("  Fitting Static Model...")
+    def log_posterior_stat(flat_coeff):
+        p_a0 = flat_coeff[0:1]
+        p_XS = flat_coeff[1:2]
+        p_YS = flat_coeff[2:3]
+        params = {'a0': p_a0, 'XS': p_XS, 'YS': p_YS}
+        lp = -0.5 * np.sum(p_a0**2)
+        ll = model.log_likelihood(params, data, precomputed_winds=winds)
+        return lp + ll
+        
+    sampler_stat = AdaptiveMetropolis(log_posterior_stat, np.array([1.0, 2.0, -2.0]), t0=500)
+    chain_stat, acc_stat = sampler_stat.sample(5000)
+    print(f"  Static MCMC Acceptance: {acc_stat:.3f}")
+    
+    chain_stat_burned = chain_stat[1000:]
+    mean_stat = np.mean(chain_stat_burned, axis=0)
+
+    # --- Plot 1: Source Recovery ---
+    print("  Generating Source Recovery Plot...")
+    t_plot = np.linspace(0, T, 100)
+    
+    # True Source (Static)
+    s_true = s_function(t_plot, true_ak, true_bk, true_a0).flatten()
+    
+    # Dynamic Estimate
+    s_dyn_samples = []
+    indices = np.random.choice(len(chain_dyn_burned), size=200, replace=False)
+    for idx in indices:
+        sample = chain_dyn_burned[idx]
+        s_t = s_function(t_plot, sample[1:2].reshape(1,1), sample[2:3].reshape(1,1), sample[0:1])
+        s_dyn_samples.append(s_t.flatten())
+    s_dyn_samples = np.array(s_dyn_samples)
+    s_dyn_mean = np.mean(s_dyn_samples, axis=0)
+    s_dyn_lower = np.percentile(s_dyn_samples, 2.5, axis=0)
+    s_dyn_upper = np.percentile(s_dyn_samples, 97.5, axis=0)
+    
+    # Static Estimate & CI
+    s_stat_samples = []
+    indices_stat = np.random.choice(len(chain_stat_burned), size=200, replace=False)
+    for idx in indices_stat:
+        sample = chain_stat_burned[idx]
+        # Static model: ak=0, bk=0
+        s_t = s_function(t_plot, np.array([[0.0]]), np.array([[0.0]]), sample[0:1])
+        s_stat_samples.append(s_t.flatten())
+    s_stat_samples = np.array(s_stat_samples)
+    s_stat_mean = np.mean(s_stat_samples, axis=0)
+    s_stat_lower = np.percentile(s_stat_samples, 2.5, axis=0)
+    s_stat_upper = np.percentile(s_stat_samples, 97.5, axis=0)
+    
+    plt.figure(figsize=(10, 6))
+    plt.plot(t_plot, s_true, 'k-', linewidth=2, label='True Source (Static)')
+    
+    # Dynamic
+    plt.plot(t_plot, s_dyn_mean, 'b--', linewidth=2, label='Dynamic Model Mean')
+    plt.fill_between(t_plot, s_dyn_lower, s_dyn_upper, color='blue', alpha=0.2, label='Dynamic 95% CI')
+    
+    # Static
+    plt.plot(t_plot, s_stat_mean, 'r:', linewidth=3, label='Static Model Mean')
+    plt.fill_between(t_plot, s_stat_lower, s_stat_upper, color='red', alpha=0.2, label='Static 95% CI')
+    
+    plt.xlabel('Time')
+    plt.ylabel('Source Intensity s(t)')
+    plt.title(f'Recovery of Static Source (Constant Wind, Sensors: {Nx}x{Nx}={Nx*Nx})')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_source_recovery.png'))
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/static_data_source_recovery.png")
+    
+    # --- Plot 2: Dynamic Parameters Chains ---
+    print("  Generating MCMC Chains Plot...")
+    fig, axes = plt.subplots(3, 2, figsize=(12, 10))
+    axes = axes.flatten()
+    labels = ['a0', 'ak', 'bk', 'XS', 'YS']
+    true_vals = [true_a0[0], true_ak[0,0], true_bk[0,0], consts['XS'][0], consts['YS'][0]]
+    
+    for i in range(5):
+        axes[i].plot(chain_dyn[:, i], label='Chain')
+        axes[i].axhline(true_vals[i], color='r', linestyle='--', label='True')
+        axes[i].set_ylabel(labels[i])
+        axes[i].legend()
+        axes[i].set_xlabel('Iteration')
+        
+    # Hide the 6th subplot
+    axes[5].axis('off')
+    
+    plt.suptitle('Dynamic Model Chains on Static Data')
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_mcmc_chains.png'))
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/static_data_mcmc_chains.png")
+    
+    # --- Plot 3: Side-by-Side Comparison (Snapshot) ---
+    print("  Generating Side-by-Side Comparison...")
+    # Reconstruct Dynamic Model Mean
+    p_dyn_a0 = mean_dyn[0:1]
+    p_dyn_ak = mean_dyn[1:2].reshape(1,1)
+    p_dyn_bk = mean_dyn[2:3].reshape(1,1)
+    p_dyn_XS = mean_dyn[3:4]
+    p_dyn_YS = mean_dyn[4:5]
+    
+    consts_dyn = consts.copy()
+    consts_dyn['XS'] = p_dyn_XS
+    consts_dyn['YS'] = p_dyn_YS
+    
+    # Use max time for snapshot
+    t_snap = T
+    wind_snap = wind_function(t_snap, consts['wa0'], consts['wa'], consts['wb'])
+    
+    # True Data (Static)
+    A_true = A_matrix(data['X_flat'], data['Y_flat'], consts, wind_vector=wind_snap)
+    s_true_val = s_function(t_snap, true_ak, true_bk, true_a0)
+    mu_true = (np.dot(s_true_val, A_true) + 1.0).reshape(Nx, Nx)
+    
+    # Dynamic Model Mean
+    A_dyn = A_matrix(data['X_flat'], data['Y_flat'], consts_dyn, wind_vector=wind_snap)
+    s_dyn_val = s_function(t_snap, p_dyn_ak, p_dyn_bk, p_dyn_a0)
+    mu_dyn = (np.dot(s_dyn_val, A_dyn) + 1.0).reshape(Nx, Nx)
+    
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    vmax = max(np.max(mu_true), np.max(mu_dyn))
+    im1 = axes[0].contourf(data['X1'], data['X2'], mu_true, levels=20, cmap='viridis', vmin=0, vmax=vmax)
+    axes[0].set_title("True Data (Static Source)")
+    im2 = axes[1].contourf(data['X1'], data['X2'], mu_dyn, levels=20, cmap='viridis', vmin=0, vmax=vmax)
+    axes[1].set_title("Recovered Model (Dynamic Mean)")
+    plt.colorbar(im1, ax=axes.ravel().tolist())
+    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_comparison.png'))
+    plt.close()
+    print(f"Saved {OUTPUT_DIR}/static_data_comparison.png")
+    
+    # --- Plot 4: Side-by-Side Animation (GIF) ---
+    print("  Generating Side-by-Side Animation (GIF)...")
+    # Reconstruct full dynamic model data for animation
+    model_dyn = Model(1.0, 0.1, consts_dyn)
+    data_dyn = model_dyn.gen_data(T, Nt, Nx, Lx, p_dyn_ak, p_dyn_bk, p_dyn_a0)
+    
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+    
+    def update_static_comparison(frame):
+        axes[0].clear()
+        axes[1].clear()
+        
+        # True Data (Static)
+        axes[0].contourf(data['X1'], data['X2'], data['Y'][frame].reshape(Nx, Nx), levels=20, cmap='viridis')
+        axes[0].set_title(f"True Data (t={data['times'][frame]:.2f})")
+        
+        # Recovered Data (Dynamic Mean)
+        axes[1].contourf(data_dyn['X1'], data_dyn['X2'], data_dyn['Y'][frame].reshape(Nx, Nx), levels=20, cmap='viridis')
+        axes[1].set_title(f"Recovered Model (t={data['times'][frame]:.2f})")
+        
+        return axes
+        
+    ani = animation.FuncAnimation(fig, update_static_comparison, frames=Nt, interval=200)
+    ani.save(os.path.join(OUTPUT_DIR, 'static_data_comparison.gif'), writer='pillow')
+    print(f"Saved {OUTPUT_DIR}/static_data_comparison.gif")
 
 def run_rmse_scaling_analysis():
     """
@@ -521,212 +784,6 @@ def run_rmse_scaling_analysis():
     print(f"Saved {OUTPUT_DIR}/presentation_location_convergence.png")
 
 
-def run_static_data_analysis():
-    """
-    Runs MCMC inference on data generated from a STATIC source with CONSTANT wind.
-    This verifies if the dynamic model can correctly recover a static source.
-    Plots include: Source Recovery (with CI), MCMC Chains, Side-by-Side Comparison (Snapshot & GIF).
-    """
-    print("Running Static Data Analysis (Dynamic Model on Static Data)...")
-    np.random.seed(42)
-    
-    # Setup
-    T, Nt, Nx, Lx = 1.0, 15, 15, 5.0
-    consts = {
-        'RHO_CH4': 0.656, 'U': 5.0,
-        'XS': [2.0], 'YS': [-2.0], 'ZS': 0, 'Z': 0,
-        'a_H': 1, 'b_H': 1, 'w': 1, 'a_V': 1, 'b_V': 1, 'h': 1,
-        'gamma_H': 1, 'gamma_V': 1,
-        # CONSTANT WIND for Static Analysis
-        'wa0': np.array([0.0, 4.0]), 'wa': [np.array([0.0, 0.0])], 'wb': [np.array([0.0, 0.0])]
-    }
-    
-    # STATIC Source: ak=0, bk=0
-    true_a0 = np.array([1.0])
-    true_ak = np.array([[0.0]])
-    true_bk = np.array([[0.0]])
-    
-    model = Model(beta=1.0, sigma_epsilon=0.1, physical_constants=consts)
-    data = model.gen_data(T, Nt, Nx, Lx, true_ak, true_bk, true_a0)
-    
-    # Pre-calculate winds
-    winds = wind_function(data['times'], consts['wa0'], consts['wa'], consts['wb'])
-    
-    # --- 1. Fit Dynamic Model ---
-    print("  Fitting Dynamic Model...")
-    initial_point = np.array([1.0, 0.1, 0.1, 2.0, -2.0]) # Start with slight variation
-    
-    def log_posterior_dyn(flat_coeff):
-        p_a0 = flat_coeff[0:1]
-        p_ak = flat_coeff[1:2].reshape(1,1)
-        p_bk = flat_coeff[2:3].reshape(1,1)
-        p_XS = flat_coeff[3:4]
-        p_YS = flat_coeff[4:5]
-        params = {'a0': p_a0, 'ak': p_ak, 'bk': p_bk, 'XS': p_XS, 'YS': p_YS}
-        lp = log_prior_coefficients([p_a0, p_ak, p_bk])
-        ll = model.log_likelihood(params, data, precomputed_winds=winds)
-        return lp + ll
-
-    sampler_dyn = AdaptiveMetropolis(log_posterior_dyn, initial_point, t0=1000)
-    chain_dyn, acc_dyn = sampler_dyn.sample(10000)
-    print(f"  Dynamic MCMC Acceptance: {acc_dyn:.3f}")
-    
-    burn_in = 2000
-    chain_dyn_burned = chain_dyn[burn_in:]
-    mean_dyn = np.mean(chain_dyn_burned, axis=0)
-    
-    # --- 2. Fit Static Model ---
-    print("  Fitting Static Model...")
-    def log_posterior_stat(flat_coeff):
-        p_a0 = flat_coeff[0:1]
-        p_XS = flat_coeff[1:2]
-        p_YS = flat_coeff[2:3]
-        params = {'a0': p_a0, 'XS': p_XS, 'YS': p_YS}
-        lp = -0.5 * np.sum(p_a0**2)
-        ll = model.log_likelihood(params, data, precomputed_winds=winds)
-        return lp + ll
-        
-    sampler_stat = AdaptiveMetropolis(log_posterior_stat, np.array([1.0, 2.0, -2.0]), t0=500)
-    chain_stat, acc_stat = sampler_stat.sample(5000)
-    print(f"  Static MCMC Acceptance: {acc_stat:.3f}")
-    
-    chain_stat_burned = chain_stat[1000:]
-    mean_stat = np.mean(chain_stat_burned, axis=0)
-
-    # --- Plot 1: Source Recovery ---
-    print("  Generating Source Recovery Plot...")
-    t_plot = np.linspace(0, T, 100)
-    
-    # True Source (Static)
-    s_true = s_function(t_plot, true_ak, true_bk, true_a0).flatten()
-    
-    # Dynamic Estimate
-    s_dyn_samples = []
-    indices = np.random.choice(len(chain_dyn_burned), size=200, replace=False)
-    for idx in indices:
-        sample = chain_dyn_burned[idx]
-        s_t = s_function(t_plot, sample[1:2].reshape(1,1), sample[2:3].reshape(1,1), sample[0:1])
-        s_dyn_samples.append(s_t.flatten())
-    s_dyn_samples = np.array(s_dyn_samples)
-    s_dyn_mean = np.mean(s_dyn_samples, axis=0)
-    s_dyn_lower = np.percentile(s_dyn_samples, 2.5, axis=0)
-    s_dyn_upper = np.percentile(s_dyn_samples, 97.5, axis=0)
-    
-    # Static Estimate & CI
-    s_stat_samples = []
-    indices_stat = np.random.choice(len(chain_stat_burned), size=200, replace=False)
-    for idx in indices_stat:
-        sample = chain_stat_burned[idx]
-        # Static model: ak=0, bk=0
-        s_t = s_function(t_plot, np.array([[0.0]]), np.array([[0.0]]), sample[0:1])
-        s_stat_samples.append(s_t.flatten())
-    s_stat_samples = np.array(s_stat_samples)
-    s_stat_mean = np.mean(s_stat_samples, axis=0)
-    s_stat_lower = np.percentile(s_stat_samples, 2.5, axis=0)
-    s_stat_upper = np.percentile(s_stat_samples, 97.5, axis=0)
-    
-    plt.figure(figsize=(10, 6))
-    plt.plot(t_plot, s_true, 'k-', linewidth=2, label='True Source (Static)')
-    
-    # Dynamic
-    plt.plot(t_plot, s_dyn_mean, 'b--', linewidth=2, label='Dynamic Model Mean')
-    plt.fill_between(t_plot, s_dyn_lower, s_dyn_upper, color='blue', alpha=0.2, label='Dynamic 95% CI')
-    
-    # Static
-    plt.plot(t_plot, s_stat_mean, 'r:', linewidth=3, label='Static Model Mean')
-    plt.fill_between(t_plot, s_stat_lower, s_stat_upper, color='red', alpha=0.2, label='Static 95% CI')
-    
-    plt.xlabel('Time')
-    plt.ylabel('Source Intensity s(t)')
-    plt.title(f'Recovery of Static Source (Constant Wind, Sensors: {Nx}x{Nx}={Nx*Nx})')
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_source_recovery.png'))
-    plt.close()
-    print(f"Saved {OUTPUT_DIR}/static_data_source_recovery.png")
-    
-    # --- Plot 2: Dynamic Parameters Chains ---
-    print("  Generating MCMC Chains Plot...")
-    plt.figure(figsize=(10, 10))
-    labels = ['a0', 'ak', 'bk', 'XS', 'YS']
-    true_vals = [true_a0[0], true_ak[0,0], true_bk[0,0], consts['XS'][0], consts['YS'][0]]
-    
-    for i in range(5):
-        plt.subplot(5, 1, i+1)
-        plt.plot(chain_dyn[:, i], label='Chain')
-        plt.axhline(true_vals[i], color='r', linestyle='--', label='True')
-        plt.ylabel(labels[i])
-        plt.legend()
-    plt.xlabel('Iteration')
-    plt.suptitle('Dynamic Model Chains on Static Data')
-    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_mcmc_chains.png'))
-    plt.close()
-    print(f"Saved {OUTPUT_DIR}/static_data_mcmc_chains.png")
-    
-    # --- Plot 3: Side-by-Side Comparison (Snapshot) ---
-    print("  Generating Side-by-Side Comparison...")
-    # Reconstruct Dynamic Model Mean
-    p_dyn_a0 = mean_dyn[0:1]
-    p_dyn_ak = mean_dyn[1:2].reshape(1,1)
-    p_dyn_bk = mean_dyn[2:3].reshape(1,1)
-    p_dyn_XS = mean_dyn[3:4]
-    p_dyn_YS = mean_dyn[4:5]
-    
-    consts_dyn = consts.copy()
-    consts_dyn['XS'] = p_dyn_XS
-    consts_dyn['YS'] = p_dyn_YS
-    
-    # Use max time for snapshot
-    t_snap = T
-    wind_snap = wind_function(t_snap, consts['wa0'], consts['wa'], consts['wb'])
-    
-    # True Data (Static)
-    A_true = A_matrix(data['X_flat'], data['Y_flat'], consts, wind_vector=wind_snap)
-    s_true_val = s_function(t_snap, true_ak, true_bk, true_a0)
-    mu_true = (np.dot(s_true_val, A_true) + 1.0).reshape(Nx, Nx)
-    
-    # Dynamic Model Mean
-    A_dyn = A_matrix(data['X_flat'], data['Y_flat'], consts_dyn, wind_vector=wind_snap)
-    s_dyn_val = s_function(t_snap, p_dyn_ak, p_dyn_bk, p_dyn_a0)
-    mu_dyn = (np.dot(s_dyn_val, A_dyn) + 1.0).reshape(Nx, Nx)
-    
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    vmax = max(np.max(mu_true), np.max(mu_dyn))
-    im1 = axes[0].contourf(data['X1'], data['X2'], mu_true, levels=20, cmap='viridis', vmin=0, vmax=vmax)
-    axes[0].set_title("True Data (Static Source)")
-    im2 = axes[1].contourf(data['X1'], data['X2'], mu_dyn, levels=20, cmap='viridis', vmin=0, vmax=vmax)
-    axes[1].set_title("Recovered Model (Dynamic Mean)")
-    plt.colorbar(im1, ax=axes.ravel().tolist())
-    plt.savefig(os.path.join(OUTPUT_DIR, 'static_data_comparison.png'))
-    plt.close()
-    print(f"Saved {OUTPUT_DIR}/static_data_comparison.png")
-    
-    # --- Plot 4: Side-by-Side Animation (GIF) ---
-    print("  Generating Side-by-Side Animation (GIF)...")
-    # Reconstruct full dynamic model data for animation
-    model_dyn = Model(1.0, 0.1, consts_dyn)
-    data_dyn = model_dyn.gen_data(T, Nt, Nx, Lx, p_dyn_ak, p_dyn_bk, p_dyn_a0)
-    
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    
-    def update_static_comparison(frame):
-        axes[0].clear()
-        axes[1].clear()
-        
-        # True Data (Static)
-        axes[0].contourf(data['X1'], data['X2'], data['Y'][frame].reshape(Nx, Nx), levels=20, cmap='viridis')
-        axes[0].set_title(f"True Data (t={data['times'][frame]:.2f})")
-        
-        # Recovered Data (Dynamic Mean)
-        axes[1].contourf(data_dyn['X1'], data_dyn['X2'], data_dyn['Y'][frame].reshape(Nx, Nx), levels=20, cmap='viridis')
-        axes[1].set_title(f"Recovered Model (t={data['times'][frame]:.2f})")
-        
-        return axes
-        
-    ani = animation.FuncAnimation(fig, update_static_comparison, frames=Nt, interval=200)
-    ani.save(os.path.join(OUTPUT_DIR, 'static_data_comparison.gif'), writer='pillow')
-    print(f"Saved {OUTPUT_DIR}/static_data_comparison.gif")
-
 def run_static_rmse_scaling_analysis():
     """
     Performs RMSE scaling analysis for STATIC data as a function of sensor count.
@@ -834,6 +891,10 @@ def run_static_rmse_scaling_analysis():
     dyn_x = [p[0] for p in est_locs_dyn]
     dyn_y = [p[1] for p in est_locs_dyn]
     
+    # Connect lines - REMOVED as per request
+    # plt.plot(stat_x, stat_y, 'r--', alpha=0.3)
+    # plt.plot(dyn_x, dyn_y, 'b--', alpha=0.3)
+    
     norm = plt.Normalize(min(sensors), max(sensors))
     
     for i, (x, y) in enumerate(zip(stat_x, stat_y)):
@@ -874,6 +935,7 @@ def run_static_rmse_scaling_analysis():
 if __name__ == "__main__":
     run_constant_source_demo()
     run_varying_source_demo()
+    run_sensor_location_demo()
     run_inference_and_plots()
     run_rmse_scaling_analysis()
     run_static_data_analysis()
